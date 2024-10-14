@@ -1,0 +1,9 @@
+nltk==3.6.7
+faiss-cpu==1.7.1
+sentence-transformers==2.2.2
+openai==0.10.5
+pymupdf==1.18.10
+PyPDF2==1.26.0
+huggingface-hub==0.1.2
+transformers==4.11.3
+rouge-score==0.0.4
