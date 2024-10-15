@@ -41,14 +41,33 @@ class EmbeddingStore:
         vectors = list(zip(ids, embeddings))
         self.index.upsert(vectors)
 
-    def search(self, query_embedding, top_k=5):
+    def search(self, query_embedding, top_k=5, namespace=None):
         """
         Busca embeddings mais próximos no Pinecone.
         - query_embedding: embedding da consulta.
         - top_k: número de resultados a serem retornados.
+        - namespace: opcional, para organizar a busca em um namespace específico.
         """
-        result = self.index.query(queries=[query_embedding], top_k=top_k)
-        return result['matches']
+        # Converter embedding para lista de floats
+        query_embedding = [float(x) for x in query_embedding]
+
+        # Verificar o formato do embedding
+        print(f"Embedding para busca: {query_embedding[:10]}...")
+
+        # Realizar a busca no Pinecone usando 'vector' e 'namespace' (opcional)
+        result = self.index.query(
+            vector=query_embedding,
+            top_k=top_k,
+            namespace=namespace,
+            include_values=True  # Incluir os valores dos vetores correspondentes no resultado
+        )
+
+        # Verificar o resultado
+        if 'matches' in result:
+            return result['matches']
+        else:
+            print(f"Erro na busca no Pinecone: {result}")
+            return []
 
     def delete_index(self):
         """

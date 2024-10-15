@@ -19,13 +19,13 @@ def main():
         pdf_path=pdf_path,
         chunk_method="sentences",  # Chunking baseado em sentenças
         chunk_size=100,  # Tamanho dos chunks
-        embedder_method="openai",  # Usar OpenAI ou Sentence-BERT
+        embedder_method="sbert",  # Usar OpenAI ou Sentence-BERT
         openai_api_key=var_openai_api_key,
         pinecone_api_key=var_pinecone_api_key,
         pinecone_environment=var_pinecone_environment,
         embedding_dimension=384,
         index_name="my-vector-index",  # Nome do índice Pinecone
-        llm_method="openai"  # Usar OpenAI para LLM
+        llm_method="local"  # Usar OpenAI para LLM
     )
 
     # Etapa 1: Preparar os dados (extrair texto do PDF, chunkar e armazenar embeddings no Pinecone)

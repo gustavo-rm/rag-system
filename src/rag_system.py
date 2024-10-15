@@ -3,15 +3,7 @@ from src.chunker import Chunker
 from src.embedder import Embedder
 from src.embedding_store import EmbeddingStore
 from src.llm import LLM
-from dotenv import load_dotenv
-import os
-
-# Carregar as variáveis de ambiente do .env
-load_dotenv()
-
-var_pinecone_api_key = os.getenv("PINECONE_API_KEY")
-var_pinecone_environment = os.getenv("PINECONE_ENVIRONMENT")
-var_openai_api_key = os.getenv("OPENAI_API_KEY")
+import numpy as np
 
 
 class RAGSystem:
@@ -71,11 +63,37 @@ class RAGSystem:
         # Gerar embedding para a consulta do usuário
         query_embedding = self.embedder.generate_embeddings([user_query])[0]
 
-        # Buscar os chunks mais relevantes usando o embedding da consulta
+        # Validar e normalizar o embedding gerado
+        query_embedding = self.embedder.validate_and_normalize_embedding(np.array(query_embedding))
+
+        # Limitar o número de casas decimais dos valores para 6
+        query_embedding = [round(float(x), 9) for x in query_embedding]
+
+        # Verificar o tipo dos elementos no embedding
+        print(f"Tipo do embedding após conversão: {type(query_embedding[0])}")
+
+        # Verificar novamente após a normalização e arredondamento
+        print(
+            f"Embedding após a normalização e arredondamento: {query_embedding[:10]}...")  # Exibir os primeiros 10 valores
+
+        # Buscar no Pinecone
         matches = self.embedding_store.search(query_embedding, top_k=top_k)
 
+        # Verificação: certifique-se de que houve matches
+        if not matches:
+            print("Nenhum match encontrado para a consulta.")
+            return None, None
+
         # Recuperar os chunks relevantes com base nos IDs retornados
-        relevant_chunks = [self.chunks[int(match['id'])] for match in matches]
+        try:
+            relevant_chunks = [self.chunks[int(match['id'])] for match in matches if 'id' in match]
+        except KeyError as e:
+            print(f"Erro ao acessar os IDs dos chunks: {e}")
+            return None, None
+
+        if not relevant_chunks:
+            print("Nenhum chunk relevante encontrado com base nos IDs retornados.")
+            return None, None
 
         # Concatenar os chunks para formar o contexto
         context = "\n".join(relevant_chunks)
