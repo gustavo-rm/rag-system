@@ -25,7 +25,7 @@ def main():
         pinecone_environment=var_pinecone_environment,
         embedding_dimension=384,
         index_name="my-vector-index",  # Nome do índice Pinecone
-        llm_method="local"  # Usar OpenAI para LLM
+        llm_method="local"  # Usar OpenAI ou local para LLM
     )
 
     # Etapa 1: Preparar os dados (extrair texto do PDF, chunkar e armazenar embeddings no Pinecone)
@@ -34,11 +34,15 @@ def main():
     print("Dados preparados com sucesso!")
 
     # Etapa 2: Receber a consulta do usuário
-    user_query = input("Digite sua pergunta: ")
+    # user_query = input("Digite sua pergunta: ")
+    # OU
+    # Etapa 2: Utilizar consulta pronta
+    user_query = "Há montanhas no relevo brasileiro?"
+    reference_answer = "Não há montanhas no relevo brasileiro."
 
     # Etapa 3: Usar o sistema RAG para buscar e gerar uma resposta
     print("Buscando resposta...")
-    answer, relevant_chunks = rag_system.query(user_query)
+    answer, relevant_chunks = rag_system.query(user_query, reference_answer)
 
     # Exibir a resposta final
     print("\nResposta Final:")

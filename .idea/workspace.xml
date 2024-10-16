@@ -4,7 +4,13 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="0e8c04a4-2796-4a45-9af8-a3fe79e60e32" name="Changes" comment="" />
+    <list default="true" id="0e8c04a4-2796-4a45-9af8-a3fe79e60e32" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/evaluator.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/evaluator.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/llm.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/llm.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/rag_system.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/rag_system.py" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -91,7 +97,9 @@
       <option name="presentableId" value="Default" />
       <updated>1728938751037</updated>
       <workItem from="1728938753352" duration="7655000" />
-      <workItem from="1728952628070" duration="3451000" />
+      <workItem from="1728952628070" duration="3677000" />
+      <workItem from="1729026750293" duration="406000" />
+      <workItem from="1729040207537" duration="987000" />
     </task>
     <servers />
   </component>
@@ -99,6 +107,6 @@
     <option name="version" value="3" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
-    <SUITE FILE_PATH="coverage/DesafioBosch$main.coverage" NAME="main Coverage Results" MODIFIED="1728955753866" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/DesafioBosch$main.coverage" NAME="main Coverage Results" MODIFIED="1729040726079" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
   </component>
 </project>

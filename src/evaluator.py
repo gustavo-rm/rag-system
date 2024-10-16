@@ -1,5 +1,5 @@
 from rouge_score import rouge_scorer
-from nltk.translate.bleu_score import sentence_bleu
+from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 import nltk
 
 nltk.download('punkt')
@@ -46,7 +46,12 @@ class Evaluator:
         """
         reference_tokens = [nltk.word_tokenize(reference_response)]
         generated_tokens = nltk.word_tokenize(generated_response)
-        bleu_score = sentence_bleu(reference_tokens, generated_tokens)
+
+        # Corrigir a atribuição do smoothing_function
+        smoothing_fn = SmoothingFunction().method1
+
+        # Calcular a pontuação BLEU com suavização
+        bleu_score = sentence_bleu(reference_tokens, generated_tokens, smoothing_function=smoothing_fn)
         return bleu_score
 
     def compute_rouge(self, generated_response, reference_response):

@@ -1,3 +1,4 @@
+from src.evaluator import Evaluator
 from src.extractor import PDFExtractor
 from src.chunker import Chunker
 from src.embedder import Embedder
@@ -18,7 +19,8 @@ class RAGSystem:
                  embedding_dimension=384,
                  index_name="my-vector-index",
                  llm_method='openai',
-                 local_llm_model_name="EleutherAI/gpt-neo-2.7B"):
+                 local_llm_model_name="EleutherAI/gpt-neo-2.7B",
+                 evaluator=None):
         # Extração
         self.extractor = PDFExtractor(pdf_path)
 
@@ -38,6 +40,9 @@ class RAGSystem:
 
         # LLM
         self.llm = LLM(method=llm_method, openai_api_key=openai_api_key, local_model_name=local_llm_model_name)
+
+        # Evaluator
+        self.evaluator = evaluator if evaluator else Evaluator()  # Inicializar se não for fornecido
 
         # Inicializar chunks armazenados
         self.chunks = []
@@ -59,7 +64,7 @@ class RAGSystem:
         # Armazenar embeddings no Pinecone
         self.embedding_store.store_embeddings(embeddings, ids=ids)
 
-    def query(self, user_query, top_k=5):
+    def query(self, user_query, reference_answer=None, top_k=5):
         # Gerar embedding para a consulta do usuário
         query_embedding = self.embedder.generate_embeddings([user_query])[0]
 
@@ -68,13 +73,6 @@ class RAGSystem:
 
         # Limitar o número de casas decimais dos valores para 6
         query_embedding = [round(float(x), 9) for x in query_embedding]
-
-        # Verificar o tipo dos elementos no embedding
-        print(f"Tipo do embedding após conversão: {type(query_embedding[0])}")
-
-        # Verificar novamente após a normalização e arredondamento
-        print(
-            f"Embedding após a normalização e arredondamento: {query_embedding[:10]}...")  # Exibir os primeiros 10 valores
 
         # Buscar no Pinecone
         matches = self.embedding_store.search(query_embedding, top_k=top_k)
@@ -103,5 +101,10 @@ class RAGSystem:
 
         # Gerar resposta com o LLM
         answer = self.llm.generate_response(prompt)
+
+        # Avaliar a resposta se houver uma resposta de referência
+        if reference_answer:
+            evaluation_results = self.evaluator.evaluate(answer, reference_answer)
+            print(f"Resultados da Avaliação: {evaluation_results}")
 
         return answer, relevant_chunks

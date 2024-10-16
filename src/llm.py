@@ -30,7 +30,7 @@ class LLM:
         else:
             raise ValueError("Método de LLM inválido.")
 
-    def generate_response(self, prompt, max_tokens=300, temperature=0.7):
+    def generate_response(self, prompt, max_new_tokens=100, temperature=0.7):
         if self.method == 'openai':
             # Fazer a requisição à API OpenAI
             response = self.client.chat.completions.create(
@@ -50,7 +50,7 @@ class LLM:
             # Gerar resposta com o modelo local
             response = self.generator(
                 prompt,
-                max_length=max_tokens,
+                max_new_tokens=max_new_tokens,
                 do_sample=True,
                 temperature=temperature,
                 truncation=True  # Truncar a resposta se ela exceder o tamanho máximo
