@@ -5,8 +5,15 @@ import spacy
 class Chunker:
     def __init__(self, method='sentences', chunk_size=100):
         """
-        method: 'sentences', 'paragraphs', 'tokens'
-        chunk_size: tamanho máximo do chunk (em caracteres ou tokens)
+        Inicializa a classe Chunker com o método de chunking e o tamanho do chunk.
+
+        Parâmetros:
+        - method: Método de chunking. Pode ser 'sentences' (dividir por sentenças),
+                  'paragraphs' (dividir por parágrafos) ou 'tokens' (dividir por tokens).
+        - chunk_size: Tamanho máximo do chunk (em número de caracteres ou tokens, dependendo do método).
+
+        Se o método for 'tokens', o modelo SpaCy será carregado para processamento de tokens.
+        Se o método for 'sentences', o NLTK será utilizado para tokenização de sentenças.
         """
         self.method = method
         self.chunk_size = chunk_size
@@ -22,6 +29,17 @@ class Chunker:
             nltk.download('punkt')
 
     def chunk_text(self, text):
+        """
+        Divide o texto de entrada em chunks com base no método especificado.
+
+        Parâmetros:
+        - text: Texto de entrada a ser dividido.
+
+        Retorna:
+        - Uma lista de chunks do texto.
+
+        O método de chunking pode ser baseado em sentenças, parágrafos ou tokens.
+        """
         if self.method == 'sentences':
             return self._chunk_by_sentences(text)
         elif self.method == 'paragraphs':
@@ -32,6 +50,15 @@ class Chunker:
             raise ValueError("Método de chunking inválido.")
 
     def _chunk_by_sentences(self, text):
+        """
+        Divide o texto de entrada em chunks com base em sentenças.
+
+        Parâmetros:
+        - text: Texto de entrada a ser dividido.
+
+        Retorna:
+        - Uma lista de chunks, onde cada chunk contém uma ou mais sentenças, respeitando o tamanho máximo do chunk.
+        """
         from nltk.tokenize import sent_tokenize
         sentences = sent_tokenize(text)
         chunks = []
@@ -47,6 +74,15 @@ class Chunker:
         return chunks
 
     def _chunk_by_paragraphs(self, text):
+        """
+        Divide o texto de entrada em chunks com base em parágrafos.
+
+        Parâmetros:
+        - text: Texto de entrada a ser dividido.
+
+        Retorna:
+        - Uma lista de chunks, onde cada chunk contém um ou mais parágrafos, respeitando o tamanho máximo do chunk.
+        """
         paragraphs = text.split("\n\n")
         chunks = []
         current_chunk = ""
@@ -61,6 +97,15 @@ class Chunker:
         return chunks
 
     def _chunk_by_tokens(self, text):
+        """
+        Divide o texto de entrada em chunks com base em tokens, utilizando o SpaCy para tokenização.
+
+        Parâmetros:
+        - text: Texto de entrada a ser dividido.
+
+        Retorna:
+        - Uma lista de chunks, onde cada chunk contém um conjunto de tokens, respeitando o tamanho máximo do chunk.
+        """
         doc = self.nlp(text)
         chunks = []
         current_chunk = []

@@ -5,9 +5,24 @@ import fitz  # PyMuPDF
 
 class PDFExtractor:
     def __init__(self, pdf_path):
+        """
+        Inicializa a classe PDFExtractor com o caminho do arquivo PDF.
+
+        Parâmetros:
+        - pdf_path: Caminho do arquivo PDF a ser processado.
+        """
         self.pdf_path = pdf_path
 
     def extract_text(self):
+        """
+        Extrai todo o texto de um arquivo PDF.
+
+        O método percorre todas as páginas do PDF e extrai o texto de cada uma delas.
+        Caso uma página não contenha texto, uma mensagem é exibida.
+
+        Retorna:
+        - Uma string contendo todo o texto extraído do PDF.
+        """
         text = ""
         with open(self.pdf_path, 'rb') as file:
             reader = PyPDF2.PdfReader(file)
@@ -22,6 +37,18 @@ class PDFExtractor:
         return text.strip()
 
     def extract_images(self, output_folder='imagens_extraidas'):
+        """
+        Extrai todas as imagens de um arquivo PDF e as salva em uma pasta de saída.
+
+        Parâmetros:
+        - output_folder: Pasta onde as imagens extraídas serão salvas (por padrão, 'imagens_extraidas').
+
+        O método percorre todas as páginas do PDF e extrai qualquer imagem encontrada.
+        As imagens são salvas no formato original e nomeadas de acordo com a página e a ordem em que aparecem.
+
+        Retorna:
+        - O número total de imagens extraídas do PDF.
+        """
         pdf_document = fitz.open(self.pdf_path)
         if not os.path.exists(output_folder):
             os.makedirs(output_folder)

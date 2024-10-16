@@ -21,16 +21,34 @@ class RAGSystem:
                  llm_method='openai',
                  local_llm_model_name="EleutherAI/gpt-neo-2.7B",
                  evaluator=None):
-        # Extração
+        """
+        Inicializa o sistema RAG (Retrieval-Augmented Generation), que combina a extração de dados de um PDF,
+        a divisão do texto em chunks, a criação de embeddings e a geração de respostas com um LLM.
+
+        Parâmetros:
+        - pdf_path: Caminho para o arquivo PDF que será extraído.
+        - chunk_method: Método de chunking ('sentences', 'paragraphs', 'tokens') para dividir o texto extraído.
+        - chunk_size: Tamanho máximo de cada chunk em caracteres ou tokens.
+        - embedder_method: Método de embedding ('sbert' ou 'openai') para gerar vetores de embeddings.
+        - openai_api_key: Chave da API OpenAI, necessária se embedder_method ou llm_method for 'openai'.
+        - pinecone_api_key: Chave da API do Pinecone, usada para armazenar e consultar os embeddings.
+        - pinecone_environment: Ambiente do Pinecone (ex: 'us-west1-gcp').
+        - embedding_dimension: Dimensão dos embeddings gerados.
+        - index_name: Nome do índice do Pinecone para armazenar embeddings.
+        - llm_method: Método para gerar respostas, 'openai' ou 'local' (modelo Hugging Face).
+        - local_llm_model_name: Nome do modelo local para geração de texto (se llm_method for 'local').
+        - evaluator: Objeto de avaliação de respostas (usando métricas como BLEU ou ROUGE), opcional.
+        """
+        # Extração de texto do PDF
         self.extractor = PDFExtractor(pdf_path)
 
-        # Chunking
+        # Divisão do texto em chunks
         self.chunker = Chunker(method=chunk_method, chunk_size=chunk_size)
 
-        # Embedding
+        # Criação de embeddings para os chunks
         self.embedder = Embedder(method=embedder_method, openai_api_key=openai_api_key)
 
-        # Embedding Store (Pinecone)
+        # Armazenamento de embeddings no Pinecone
         self.embedding_store = EmbeddingStore(
             pinecone_api_key=pinecone_api_key,
             pinecone_environment=pinecone_environment,
@@ -38,16 +56,26 @@ class RAGSystem:
             index_name=index_name
         )
 
-        # LLM
+        # Inicializa o LLM (Language Model) para gerar respostas
         self.llm = LLM(method=llm_method, openai_api_key=openai_api_key, local_model_name=local_llm_model_name)
 
-        # Evaluator
-        self.evaluator = evaluator if evaluator else Evaluator()  # Inicializar se não for fornecido
+        # Inicializa o avaliador para calcular métricas (se não for fornecido, cria uma instância)
+        self.evaluator = evaluator if evaluator else Evaluator()
 
-        # Inicializar chunks armazenados
+        # Inicializa a lista de chunks armazenados
         self.chunks = []
 
     def prepare_data(self):
+        """
+        Prepara os dados do sistema RAG, extraindo texto do PDF, dividindo-o em chunks, gerando embeddings e
+        armazenando-os no Pinecone.
+
+        Passos:
+        1. Extrai o texto do arquivo PDF.
+        2. Divide o texto em chunks de acordo com o método escolhido (sentences, paragraphs, tokens).
+        3. Gera embeddings para cada chunk de texto.
+        4. Armazena os embeddings no Pinecone, associando cada embedding a um ID exclusivo.
+        """
         # Extrair texto do PDF
         text = self.extractor.extract_text()
 
@@ -58,13 +86,25 @@ class RAGSystem:
         # Gerar embeddings para cada chunk
         embeddings = self.embedder.generate_embeddings(self.chunks)
 
-        # Gerar IDs para cada embedding (IDs podem ser os índices dos chunks)
+        # Gerar IDs para os embeddings (usando o índice dos chunks)
         ids = [str(i) for i in range(len(embeddings))]
 
-        # Armazenar embeddings no Pinecone
+        # Armazenar os embeddings no Pinecone
         self.embedding_store.store_embeddings(embeddings, ids=ids)
 
     def query(self, user_query, reference_answer=None, top_k=5):
+        """
+        Faz uma consulta ao sistema RAG, utilizando embeddings e um modelo de linguagem para responder à pergunta do usuário.
+
+        Parâmetros:
+        - user_query: A pergunta ou consulta do usuário.
+        - reference_answer: Resposta de referência para avaliação (opcional).
+        - top_k: Número de chunks mais relevantes a serem retornados na busca.
+
+        Retorna:
+        - answer: A resposta gerada pelo modelo LLM.
+        - relevant_chunks: Os chunks mais relevantes encontrados para a consulta.
+        """
         # Gerar embedding para a consulta do usuário
         query_embedding = self.embedder.generate_embeddings([user_query])[0]
 
@@ -74,10 +114,10 @@ class RAGSystem:
         # Limitar o número de casas decimais dos valores para 6
         query_embedding = [round(float(x), 9) for x in query_embedding]
 
-        # Buscar no Pinecone
+        # Buscar no Pinecone pelos embeddings mais próximos
         matches = self.embedding_store.search(query_embedding, top_k=top_k)
 
-        # Verificação: certifique-se de que houve matches
+        # Verificar se houve matches
         if not matches:
             print("Nenhum match encontrado para a consulta.")
             return None, None
@@ -99,7 +139,7 @@ class RAGSystem:
         # Criar o prompt para o LLM
         prompt = f"Aqui estão algumas informações relevantes extraídas de documentos:\n{context}\n\nCom base nessas informações, responda à seguinte pergunta:\n{user_query}"
 
-        # Gerar resposta com o LLM
+        # Gerar a resposta com o LLM
         answer = self.llm.generate_response(prompt)
 
         # Avaliar a resposta se houver uma resposta de referência
