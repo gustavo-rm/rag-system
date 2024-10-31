@@ -62,7 +62,7 @@ pip --version
 Clone o repositório do projeto para sua máquina local:
 
 ```bash
-git clone https://github.com/seu-usuario/RAGSystem.git
+git clone https://github.com/gustavo-rm/rag-system.git
 cd RAGSystem
 ```
 
