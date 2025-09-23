@@ -1,150 +1,90 @@
-from src.evaluator import Evaluator
-from src.extractor import PDFExtractor
-from src.chunker import Chunker
-from src.embedder import Embedder
-from src.embedding_store import EmbeddingStore
-from src.llm import LLM
-import numpy as np
+# /src/rag_system.py (Arquivo Novo)
+
+from typing import List, Dict, Any
+
+# Importando nossas classes refatoradas
+from .pdf_processor import PDFProcessor
+from .chunker import Chunker
+from .embedder import Embedder
+from .stores.base import VectorStore  # Importa a interface, não a implementação!
+from .llm import LLM
 
 
 class RAGSystem:
-    def __init__(self,
-                 pdf_path,
-                 chunk_method='sentences',
-                 chunk_size=100,
-                 embedder_method='sbert',
-                 openai_api_key=None,
-                 pinecone_api_key=None,
-                 pinecone_environment=None,
-                 embedding_dimension=384,
-                 index_name="my-vector-index",
-                 llm_method='openai',
-                 local_llm_model_name="EleutherAI/gpt-neo-2.7B",
-                 evaluator=None):
+    def __init__(self, chunker: Chunker, embedder: Embedder, vector_store: VectorStore, llm: LLM):
         """
-        Inicializa o sistema RAG (Retrieval-Augmented Generation), que combina a extração de dados de um PDF,
-        a divisão do texto em chunks, a criação de embeddings e a geração de respostas com um LLM.
-
-        Parâmetros:
-        - pdf_path: Caminho para o arquivo PDF que será extraído.
-        - chunk_method: Método de chunking ('sentences', 'paragraphs', 'tokens') para dividir o texto extraído.
-        - chunk_size: Tamanho máximo de cada chunk em caracteres ou tokens.
-        - embedder_method: Método de embedding ('sbert' ou 'openai') para gerar vetores de embeddings.
-        - openai_api_key: Chave da API OpenAI, necessária se embedder_method ou llm_method for 'openai'.
-        - pinecone_api_key: Chave da API do Pinecone, usada para armazenar e consultar os embeddings.
-        - pinecone_environment: Ambiente do Pinecone (ex: 'us-west1-gcp').
-        - embedding_dimension: Dimensão dos embeddings gerados.
-        - index_name: Nome do índice do Pinecone para armazenar embeddings.
-        - llm_method: Método para gerar respostas, 'openai' ou 'local' (modelo Hugging Face).
-        - local_llm_model_name: Nome do modelo local para geração de texto (se llm_method for 'local').
-        - evaluator: Objeto de avaliação de respostas (usando métricas como BLEU ou ROUGE), opcional.
+        Inicializa o sistema RAG com todos os seus componentes.
+        (Injeção de Dependência)
         """
-        # Extração de texto do PDF
-        self.extractor = PDFExtractor(pdf_path)
+        self.chunker = chunker
+        self.embedder = embedder
+        self.vector_store = vector_store
+        self.llm = llm
 
-        # Divisão do texto em chunks
-        self.chunker = Chunker(method=chunk_method, chunk_size=chunk_size)
+        # Este é o nosso prompt otimizado, o coração da geração de respostas.
+        self.system_prompt = """Você é um assistente especialista e atencioso. Sua tarefa é responder à pergunta do usuário estritamente com base no contexto fornecido.
+Regras:
+1. Analise o contexto e a pergunta cuidadosamente.
+2. Responda de forma concisa e direta, usando apenas as informações encontradas no contexto.
+3. Se a resposta não estiver no contexto, responda exatamente: 'A informação não foi encontrada nos documentos fornecidos.'
+4. Não adicione nenhuma informação externa ou conhecimento prévio."""
 
-        # Criação de embeddings para os chunks
-        self.embedder = Embedder(method=embedder_method, openai_api_key=openai_api_key)
+    def setup_pipeline(self, pdf_path: str):
+        """
+        Executa o pipeline de ingestão de dados: processa um PDF e armazena os embeddings.
+        """
+        print(f"--- Iniciando pipeline de ingestão para: {pdf_path} ---")
 
-        # Armazenamento de embeddings no Pinecone
-        self.embedding_store = EmbeddingStore(
-            pinecone_api_key=pinecone_api_key,
-            pinecone_environment=pinecone_environment,
-            dimension=embedding_dimension,
-            index_name=index_name
+        # 1. Processar o PDF para extrair texto limpo
+        processor = PDFProcessor(pdf_path)
+        text = processor.extract_text()
+        print(f"Texto extraído e limpo. Total de caracteres: {len(text)}")
+
+        # 2. Dividir o texto em chunks semânticos
+        chunks = self.chunker.chunk_text(text)
+        print(f"Texto dividido em {len(chunks)} chunks.")
+
+        # 3. Gerar embeddings para cada chunk
+        embeddings = self.embedder.generate_embeddings(chunks)
+        print(f"Embeddings gerados para todos os chunks.")
+
+        # 4. Armazenar os chunks e seus embeddings no Vector Store
+        self.vector_store.store_embeddings(chunks, embeddings)
+        print("--- Pipeline de ingestão concluído com sucesso! ---")
+
+    def ask(self, question: str) -> Dict[str, Any]:
+        """
+        Executa o pipeline de consulta: busca por contexto e gera uma resposta.
+        """
+        print(f"\n--- Nova Pergunta: {question} ---")
+
+        # 1. Gerar o embedding para a pergunta
+        query_embedding = self.embedder.generate_embeddings([question])[0]
+
+        # 2. Buscar por chunks relevantes no Vector Store
+        search_results = self.vector_store.search(query_embedding, top_k=3)
+        retrieved_contexts = [result['metadata']['text'] for result in search_results]
+        print(f"Contextos recuperados: {len(retrieved_contexts)}")
+
+        # 3. Construir o prompt para o LLM
+        context_str = "\n\n---\n\n".join(retrieved_contexts)
+        user_prompt = f"""
+[CONTEXTO]
+{context_str}
+[/CONTEXTO]
+
+Com base estritamente no contexto acima, responda à seguinte pergunta:
+Pergunta: {question}
+"""
+        # 4. Gerar a resposta com o LLM
+        answer = self.llm.generate_response(
+            prompt=user_prompt,
+            system_prompt=self.system_prompt
         )
+        print(f"Resposta Gerada: {answer}")
 
-        # Inicializa o LLM (Language Model) para gerar respostas
-        self.llm = LLM(method=llm_method, openai_api_key=openai_api_key, local_model_name=local_llm_model_name)
-
-        # Inicializa o avaliador para calcular métricas (se não for fornecido, cria uma instância)
-        self.evaluator = evaluator if evaluator else Evaluator()
-
-        # Inicializa a lista de chunks armazenados
-        self.chunks = []
-
-    def prepare_data(self):
-        """
-        Prepara os dados do sistema RAG, extraindo texto do PDF, dividindo-o em chunks, gerando embeddings e
-        armazenando-os no Pinecone.
-
-        Passos:
-        1. Extrai o texto do arquivo PDF.
-        2. Divide o texto em chunks de acordo com o método escolhido (sentences, paragraphs, tokens).
-        3. Gera embeddings para cada chunk de texto.
-        4. Armazena os embeddings no Pinecone, associando cada embedding a um ID exclusivo.
-        """
-        # Extrair texto do PDF
-        text = self.extractor.extract_text()
-
-        # Dividir o texto em chunks
-        self.chunks = self.chunker.chunk_text(text)
-        print(f"{len(self.chunks)} chunks criados.")
-
-        # Gerar embeddings para cada chunk
-        embeddings = self.embedder.generate_embeddings(self.chunks)
-
-        # Gerar IDs para os embeddings (usando o índice dos chunks)
-        ids = [str(i) for i in range(len(embeddings))]
-
-        # Armazenar os embeddings no Pinecone
-        self.embedding_store.store_embeddings(embeddings, ids=ids)
-
-    def query(self, user_query, reference_answer=None, top_k=5):
-        """
-        Faz uma consulta ao sistema RAG, utilizando embeddings e um modelo de linguagem para responder à pergunta do usuário.
-
-        Parâmetros:
-        - user_query: A pergunta ou consulta do usuário.
-        - reference_answer: Resposta de referência para avaliação (opcional).
-        - top_k: Número de chunks mais relevantes a serem retornados na busca.
-
-        Retorna:
-        - answer: A resposta gerada pelo modelo LLM.
-        - relevant_chunks: Os chunks mais relevantes encontrados para a consulta.
-        """
-        # Gerar embedding para a consulta do usuário
-        query_embedding = self.embedder.generate_embeddings([user_query])[0]
-
-        # Validar e normalizar o embedding gerado
-        query_embedding = self.embedder.validate_and_normalize_embedding(np.array(query_embedding))
-
-        # Limitar o número de casas decimais dos valores para 6
-        query_embedding = [round(float(x), 9) for x in query_embedding]
-
-        # Buscar no Pinecone pelos embeddings mais próximos
-        matches = self.embedding_store.search(query_embedding, top_k=top_k)
-
-        # Verificar se houve matches
-        if not matches:
-            print("Nenhum match encontrado para a consulta.")
-            return None, None
-
-        # Recuperar os chunks relevantes com base nos IDs retornados
-        try:
-            relevant_chunks = [self.chunks[int(match['id'])] for match in matches if 'id' in match]
-        except KeyError as e:
-            print(f"Erro ao acessar os IDs dos chunks: {e}")
-            return None, None
-
-        if not relevant_chunks:
-            print("Nenhum chunk relevante encontrado com base nos IDs retornados.")
-            return None, None
-
-        # Concatenar os chunks para formar o contexto
-        context = "\n".join(relevant_chunks)
-
-        # Criar o prompt para o LLM
-        prompt = f"Aqui estão algumas informações relevantes extraídas de documentos:\n{context}\n\nCom base nessas informações, responda à seguinte pergunta:\n{user_query}"
-
-        # Gerar a resposta com o LLM
-        answer = self.llm.generate_response(prompt)
-
-        # Avaliar a resposta se houver uma resposta de referência
-        if reference_answer:
-            evaluation_results = self.evaluator.evaluate(answer, reference_answer)
-            print(f"Resultados da Avaliação: {evaluation_results}")
-
-        return answer, relevant_chunks
+        return {
+            "question": question,
+            "answer": answer,
+            "contexts": retrieved_contexts
+        }

@@ -1,112 +1,96 @@
+# /src/embedder.py (Versão Refatorada)
+
 from openai import OpenAI
 from sentence_transformers import SentenceTransformer
 import numpy as np
+from typing import List
+
+# --- Recomendações de Modelos Multilíngues (SBERT) ---
+# Modelo Padrão (bom equilíbrio entre performance e velocidade):
+DEFAULT_SBERT_MODEL = 'paraphrase-multilingual-mpnet-base-v2'
+# Modelo de Alta Performance (pode ser mais lento, mas geralmente mais preciso):
+# HIGH_PERFORMANCE_SBERT_MODEL = 'intfloat/multilingual-e5-large'
+
+# --- Modelo Padrão da OpenAI ---
+DEFAULT_OPENAI_MODEL = "text-embedding-ada-002"
 
 
 class Embedder:
-    def __init__(self, method='sbert', openai_api_key=None):
+    """
+    Classe otimizada para gerar embeddings de texto usando SBERT (local) ou OpenAI (API).
+    Esta versão utiliza modelos mais adequados para múltiplos idiomas e aplica
+    as melhores práticas para eficiência e correção matemática.
+    """
+
+    def __init__(self, method: str = 'sbert', model_name: str = None, openai_api_key: str = None):
         """
-        Inicializa a classe Embedder para gerar embeddings de chunks de texto.
+        Inicializa a classe Embedder.
 
         Parâmetros:
-        - method: Método de geração de embeddings. Pode ser 'sbert' (Sentence-BERT) ou 'openai' (modelos da OpenAI).
-        - openai_api_key: Chave da API da OpenAI, necessária se o método 'openai' for utilizado.
-
-        O modelo 'all-MiniLM-L6-v2' é utilizado no caso do método 'sbert'. Se o método for 'openai', a chave da API
-        da OpenAI é necessária para acessar os modelos de embeddings.
+        - method (str): 'sbert' para modelos locais ou 'openai' para a API.
+        - model_name (str): O nome do modelo a ser usado. Se for None, usará um padrão otimizado.
+        - openai_api_key (str): Chave da API da OpenAI, necessária se method='openai'.
         """
-        self.client = OpenAI(api_key=openai_api_key)
         self.method = method
-        if method == 'sbert':
-            self.model = SentenceTransformer('all-MiniLM-L6-v2')
-        elif method == 'openai':
-            if openai_api_key is None:
-                raise ValueError("Chave da API da OpenAI é necessária para usar OpenAI embeddings.")
-        else:
-            raise ValueError("Método de embedding inválido.")
 
-    def generate_embeddings(self, chunks):
+        if self.method == 'sbert':
+            # Usa o modelo padrão recomendado se nenhum for especificado.
+            sbert_model_to_load = model_name or DEFAULT_SBERT_MODEL
+            print(f"Carregando modelo SBERT local: {sbert_model_to_load}")
+            # device='cuda' pode ser adicionado se você tiver uma GPU NVIDIA configurada.
+            self.model = SentenceTransformer(sbert_model_to_load)
+
+        elif self.method == 'openai':
+            if not openai_api_key:
+                raise ValueError("A chave da API da OpenAI é necessária para usar este método.")
+            self.client = OpenAI(api_key=openai_api_key)
+            self.openai_model = model_name or DEFAULT_OPENAI_MODEL
+
+        else:
+            raise ValueError("Método de embedding inválido. Escolha 'sbert' ou 'openai'.")
+
+    def generate_embeddings(self, chunks: List[str]) -> List[List[float]]:
         """
-        Gera embeddings para uma lista de chunks de texto, de acordo com o método especificado.
+        Gera embeddings para uma lista de chunks de texto.
 
         Parâmetros:
-        - chunks: Lista de pedaços (chunks) de texto para os quais os embeddings serão gerados.
+        - chunks (List[str]): Lista de textos para gerar embeddings.
 
         Retorna:
-        - Uma lista de embeddings gerados, que podem ser gerados via 'sbert' ou 'openai'.
+        - List[List[float]]: Uma lista de vetores de embedding.
         """
         if self.method == 'sbert':
             return self._generate_sbert_embeddings(chunks)
         elif self.method == 'openai':
             return self._generate_openai_embeddings(chunks)
 
-    def validate_and_normalize_embedding(self, embedding):
+    def _generate_sbert_embeddings(self, chunks: List[str]) -> List[List[float]]:
         """
-        Valida e normaliza um vetor de embedding.
-
-        Parâmetros:
-        - embedding: O vetor de embedding a ser normalizado.
-
-        Processos realizados:
-        - Substitui valores NaN e infinitos por 0.
-        - Normaliza o vetor para garantir que sua magnitude seja 1.
-        - Limita os valores do embedding entre 0.001 e 1.0, para evitar valores absolutos de 0.
-        - Garante que os valores do vetor sejam do tipo float32.
-
-        Retorna:
-        - O vetor de embedding validado e normalizado.
+        Gera embeddings usando Sentence-BERT de forma otimizada.
         """
-        # Substituir NaN, infinitos positivos e negativos por 0
-        embedding = np.nan_to_num(embedding, nan=0.0, posinf=0.0, neginf=0.0)
+        # A biblioteca sentence-transformers recomenda usar normalize_embeddings=True
+        # para busca por similaridade de cosseno. É mais eficiente do que fazer manualmente.
+        embeddings = self.model.encode(
+            chunks,
+            show_progress_bar=True,
+            normalize_embeddings=True
+        )
+        # O resultado já é um numpy.ndarray, convertemos para lista de listas
+        return embeddings.astype(np.float32).tolist()
 
-        # Normalizar o vetor (magnitude do vetor = 1)
-        norm = np.linalg.norm(embedding)
-        if norm > 0:
-            embedding = embedding / norm
-
-        # Limitar os valores entre 0.001 (Evitar valores de 0 absolutos) e 1
-        embedding = np.clip(embedding, 0.001, 1.0)
-
-        # Garantir que o embedding está em formato de float32
-        embedding = embedding.astype(np.float32)
-
-        return embedding
-
-    def _generate_sbert_embeddings(self, chunks):
+    def _generate_openai_embeddings(self, chunks: List[str]) -> List[List[float]]:
         """
-        Gera embeddings usando Sentence-BERT (SBERT) para uma lista de chunks de texto.
-
-        Parâmetros:
-        - chunks: Lista de pedaços (chunks) de texto para os quais os embeddings serão gerados.
-
-        Retorna:
-        - Uma lista de embeddings SBERT normalizados.
+        Gera embeddings usando a API da OpenAI de forma eficiente (em lote).
         """
-        embeddings = self.model.encode(chunks)
+        # A API da OpenAI é otimizada para receber uma lista de textos de uma vez.
+        # Evita fazer um loop e uma chamada de API para cada chunk.
+        response = self.client.embeddings.create(
+            input=chunks,
+            model=self.openai_model
+        )
 
-        # Validar e normalizar os embeddings
-        embeddings = [self.validate_and_normalize_embedding(embedding) for embedding in embeddings]
+        # Extrai os embeddings da resposta
+        embeddings = [item.embedding for item in response.data]
 
-        return embeddings
-
-    def _generate_openai_embeddings(self, chunks):
-        """
-        Gera embeddings usando a API da OpenAI para uma lista de chunks de texto.
-
-        Parâmetros:
-        - chunks: Lista de pedaços (chunks) de texto para os quais os embeddings serão gerados.
-
-        Retorna:
-        - Uma lista de embeddings gerados pela OpenAI, que são validados e normalizados.
-        """
-        embeddings = []
-        for chunk in chunks:
-            response = self.client.embeddings.create(input=chunk, model="text-embedding-ada-002")
-            embedding = response['data'][0]['embedding']
-
-            # Validar e normalizar o embedding
-            embedding = self.validate_and_normalize_embedding(np.array(embedding))
-
-            embeddings.append(embedding.tolist())  # Converter para lista quando necessário
-
+        # Os embeddings da OpenAI já são normalizados. Não é preciso fazer nada.
         return embeddings

@@ -1,15 +1,29 @@
-nltk~=3.9.1
-sentence-transformers==2.2.2
-pymupdf==1.24.11
-PyPDF2==2.12.1
-huggingface-hub==0.25.2
-transformers==4.45.2
-rouge-score==0.1.2
+# --- Core - RAG Pipeline & Data Processing ---
+# Para processamento de PDFs, chunking e embeddings
+PyMuPDF  # Usado no pdf_processor.py para extrair texto (import fitz)
+numpy    # Dependência fundamental para computação numérica (embeddings)
+sentence-transformers # Para gerar embeddings com modelos locais (SBERT)
 
-spacy~=3.8.2
-numpy~=2.0.2
-fitz~=0.0.1.dev2
-pinecone~=5.3.1
-python-dotenv~=1.0.1
-openai~=1.51.2
-torch~=2.4.1
+# --- LLM & Transformers ---
+# Para interagir com os Modelos de Linguagem
+openai          # Cliente oficial da API da OpenAI
+transformers    # Para carregar e usar modelos locais do Hugging Face
+torch           # Framework principal de deep learning.
+accelerate      # Ajuda a carregar modelos grandes de forma eficiente no Transformers
+bitsandbytes    # Ajuda a carregar modelos em 8-bit ou 4-bit, economizando VRAM
+
+# --- Vector Stores (Escolha um ou ambos) ---
+# Para armazenar e buscar os vetores de embedding
+chromadb        # Para o banco de dados de vetores 100% local e persistente
+pinecone        # Para o serviço gerenciado de banco de dados de vetores na nuvem
+
+# --- Evaluation ---
+# Para avaliar a performance do sistema RAG
+ragas           # Framework principal para métricas de RAG (faithfulness, relevancy, etc.)
+datasets        # Requerido pelo RAGAs para manipulação de dados
+nltk            # Para métricas clássicas como BLEU
+rouge-score     # Para a métrica ROUGE
+
+# --- Utilities ---
+# Para funcionalidades auxiliares como gerenciamento de chaves de API
+python-dotenv   # Para carregar variáveis de ambiente de um arquivo .env
