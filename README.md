@@ -2,134 +2,152 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/release/python-380/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-1.10.0-red.svg)](https://pytorch.org/)
+[![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Models-yellow)](https://huggingface.co/models)
+[![RAGAs](https://img.shields.io/badge/Evaluated%20by-RAGAs-orange)](https://github.com/explodinggradients/ragas)
 
-RAGSystem (Retrieval-Augmented Generation System) é um sistema de recuperação de informações combinado com geração de texto baseado em IA, capaz de realizar consultas sobre documentos PDF e gerar respostas baseadas no contexto extraído.
+**RAGSystem** é um sistema modular de Geração Aumentada por Recuperação (RAG). Ele processa documentos PDF, transforma seu conteúdo em uma base de conhecimento vetorial e permite que os usuários façam perguntas em linguagem natural, recebendo respostas baseadas exclusivamente nas fontes fornecidas.
 
-## 🔥 Funcionalidades
+Este projeto foi reestruturado para seguir as melhores práticas de design de software, oferecendo uma arquitetura flexível, componentes otimizados e uma avaliação do pipeline.
 
-- **Extração de conteúdo PDF**: Processa e extrai texto de arquivos PDF.
-- **Chunking do conteúdo**: Divide o texto em segmentos (chunks) para facilitar a indexação.
-- **Geração de Embeddings**: Suporta a geração de embeddings com `OpenAI` ou `Sentence-BERT` para indexação e consulta.
-- **Armazenamento de Embeddings**: Integração com Pinecone para armazenamento e busca vetorial.
-- **Geração de Texto**: Suporte para modelos de linguagem (LLM), utilizando tanto OpenAI GPT quanto modelos locais.
+## 🔥 Funcionalidades Aprimoradas
+
+-   **Extração e Limpeza de Conteúdo PDF**: Utiliza `PyMuPDF` para uma extração de texto de alta fidelidade, com um pipeline de limpeza que remove artefatos e normaliza o conteúdo para melhorar a qualidade.
+-   **Chunking Semântico e Recursivo**: Implementa uma estratégia de divisão de texto avançada que preserva a coesão semântica e utiliza sobreposição (`overlap`) para não perder contexto entre os `chunks`.
+-   **Geração de Embeddings Otimizada**: Suporte para modelos de embedding atualizados, com foco em modelos multilíngues (`sentence-transformers`) para alta performance em português e outros idiomas.
+-   **Armazenamento Vetorial Híbrido**: Arquitetura flexível que suporta tanto bancos de dados de vetores locais e de código aberto (**ChromaDB**) quanto serviços gerenciados na nuvem (**Pinecone**), configuráveis através de um único ponto de entrada.
+-   **Geração de Respostas com LLMs**: Suporte para LLMs via API (`OpenAI GPT-4o-mini`, etc.) e modelos locais otimizados para instruções (`Phi-3`, `Mistral`, `Llama 3`), utilizando templates de prompt aprimorados para reduzir alucinações.
+-   **Avaliação do Pipeline**: Integração com o framework **RAGAs** para avaliar a qualidade do sistema em métricas cruciais como `faithfulness` (fidelidade), `answer_relevancy` (relevância da resposta) e `context_precision` (precisão do contexto).
 
 ## 📂 Estrutura do Projeto
 
+A arquitetura foi refatorada para ser modular e escalável, utilizando pacotes para organizar responsabilidades.
+
 ```bash
 ├── src/
-│   ├── chunker.py         # Função para dividir o texto extraído em chunks
-│   ├── embedder.py        # Classe para geração de embeddings
-│   ├── embedding_store.py # Armazenamento e busca de embeddings usando Pinecone
-│   ├── evaluator.py       # Avaliação de resultados com métricas (ex: ROUGE)
-│   ├── llm.py             # Geração de texto com LLMs (OpenAI e modelos locais)
-│   ├── pdf_extractor.py   # Extração de texto de PDFs
-│   ├── rag_system.py      # Sistema principal do RAG que integra todos os componentes
-│   └── utils.py           # Funções utilitárias
-├── main.py                # Script principal para executar o sistema
-├── requirements.txt       # Dependências do projeto
-└── README.md              # Documentação do projeto
-```
+│   ├── stores/                # Pacote para armazenamento vetorial
+│   │   ├── __init__.py        # Exporta a fábrica e as classes
+│   │   ├── base.py            # Classe abstrata VectorStore (interface)
+│   │   ├── chroma_store.py    # Implementação para ChromaDB (local)
+│   │   ├── pinecone_store.py  # Implementação para Pinecone (nuvem)
+│   │   └── factory.py         # Fábrica para selecionar o backend
+│   │
+│   ├── chunker.py             # Módulo de chunking avançado
+│   ├── embedder.py            # Geração de embeddings otimizada
+│   ├── evaluator.py           # Avaliador completo com RAGAs
+│   ├── llm.py                 # Geração de texto com LLMs
+│   ├── pdf_processor.py       # Extração e limpeza de PDFs
+│   ├── rag_system.py          # Orquestrador principal do pipeline
+│   └── utils.py               # (Funções utilitárias)
+│
+├── main.py                    # Script principal para executar o sistema
+├── requirements.txt           # Dependências do projeto
+├── .env.example               # Exemplo de arquivo para chaves de API
+└── README.md                  # Documentação do projeto
+````
 
 ## 🛠️ Tecnologias Utilizadas
 
-- **Linguagem**: Python 3.8+
-- **Frameworks**: 
-  - [PyTorch](https://pytorch.org/) para modelos locais de LLM
-  - [Hugging Face Transformers](https://huggingface.co/transformers/) para integração com modelos de texto
-- **APIs**:
-  - [OpenAI GPT](https://beta.openai.com/)
-  - [Pinecone](https://www.pinecone.io/) para armazenamento de vetores
-- **Bibliotecas**:
-  - `PyPDF2` e `pymupdf` para manipulação de PDFs
-  - `nltk` para tokenização
-  - `sentence-transformers` para embeddings
-  - `dotenv` para carregar variáveis de ambiente
+  - **Linguagem**: Python 3.8+
+  - **Frameworks**:
+      - [PyTorch](https://pytorch.org/) para modelos de deep learning
+      - [Hugging Face Transformers](https://huggingface.co/transformers/) para acesso a modelos locais
+  - **Armazenamento Vetorial**:
+      - [ChromaDB](https://www.trychroma.com/) (Local, Padrão)
+      - [Pinecone](https://www.pinecone.io/) (Nuvem, Opcional)
+  - **Avaliação**:
+      - [RAGAs](https://github.com/explodinggradients/ragas) para métricas de RAG
+      - `nltk` & `rouge-score` para métricas clássicas
+  - **Bibliotecas Principais**:
+      - `PyMuPDF` para manipulação de PDFs
+      - `sentence-transformers` para embeddings
+      - `openai` para a API da OpenAI
+      - `accelerate` para carregamento otimizado de modelos
+      - `python-dotenv` para gerenciamento de chaves
 
 ## 🚀 Como Executar o Projeto
 
-### 1. Pré-requisitos
+### 1\. Pré-requisitos
 
-Certifique-se de ter o Python 3.8+ e o `pip` instalado. 
+Certifique-se de ter o Python 3.8+ e o `pip` instalado.
 
-```bash
-python --version
-pip --version
-```
-
-### 2. Clone o Repositório
-
-Clone o repositório do projeto para sua máquina local:
+### 2\. Clone o Repositório
 
 ```bash
-git clone https://github.com/gustavo-rm/rag-system.git
-cd RAGSystem
+git clone [https://github.com/gustavo-rm/rag-system.git](https://github.com/gustavo-rm/rag-system)
+cd seu-repositorio
 ```
 
-### 3. Instale as Dependências
+### 3\. Instale as Dependências
 
-Instale todas as dependências necessárias listadas no arquivo `requirements.txt`:
+Instale todas as dependências do `requirements.txt`.
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Configure as Chaves de API
+**⚠️ Importante para Usuários de GPU (NVIDIA):** Para obter a máxima performance com modelos locais, é altamente recomendado instalar o [PyTorch com suporte a CUDA manualmente](https://pytorch.org/get-started/locally/) antes de rodar o comando acima.
 
-Crie um arquivo `.env` na raiz do projeto e insira suas chaves da OpenAI e Pinecone:
+### 4\. Configure as Variáveis de Ambiente
+
+Crie um arquivo `.env` a partir do exemplo `.env.example`. As chaves são **opcionais** se você planeja usar apenas modelos e armazenamento locais.
 
 ```bash
 # .env
-PINECONE_API_KEY=your-pinecone-api-key
-PINECONE_ENVIRONMENT=your-pinecone-environment
-OPENAI_API_KEY=your-openai-api-key
+OPENAI_API_KEY="sk-..."          # Necessário para usar modelos da OpenAI
+PINECONE_API_KEY="sua-chave"     # Necessário para usar o backend do Pinecone
+PINECONE_ENVIRONMENT="sua-regiao" # Necessário para usar o backend do Pinecone
 ```
 
-### 5. Execute o Sistema
+### 5\. Execute o Sistema
 
-Agora você pode rodar o sistema usando o `main.py`:
+A configuração do pipeline (qual LLM usar, qual vector store, etc.) é feita diretamente no `main.py`.
 
 ```bash
 python main.py
 ```
 
-## 📝 Como Usar
+## ⚙️ Configuração Flexível
 
-1. Insira o caminho para o PDF que você deseja consultar.
-2. O sistema irá dividir o texto em chunks, gerar embeddings e armazená-los no Pinecone.
-3. Você pode fazer perguntas, e o sistema irá gerar uma resposta com base no conteúdo do PDF.
+O sistema utiliza um padrão de fábrica para selecionar os componentes, tornando a configuração fácil e centralizada no `main.py`.
 
-## ⚙️ Configurações
+**Exemplo 1: Configuração 100% Local (Padrão)**
 
-- **Métodos de Embeddings**: 
-  - `"openai"` (Usa embeddings da OpenAI)
-  - `"sbert"` (Usa Sentence-BERT para embeddings locais)
-  
-- **LLM Methods**: 
-  - `"openai"` (Usa a API OpenAI GPT)
-  - `"local"` (Usa um modelo local como GPT-Neo)
+```python
+# Em main.py
+config_store = {
+    'type': 'chroma',
+    'path': './db/meu_projeto_rag'
+}
+vector_store = get_vector_store(config_store)
+llm = LLM(method='local', model_name='microsoft/Phi-3-mini-4k-instruct')
+```
 
-As configurações de chunking, embeddings e LLM podem ser ajustadas diretamente no código no momento de inicialização do sistema.
+**Exemplo 2: Configuração Híbrida com OpenAI e Pinecone**
+
+```python
+# Em main.py
+config_store = {
+    'type': 'pinecone',
+    'api_key': os.getenv("PINECONE_API_KEY"),
+    'environment': os.getenv("PINECONE_ENVIRONMENT"),
+    'index_name': 'meu-indice',
+    'dimension': 768 # Dimensão do seu modelo de embedding
+}
+vector_store = get_vector_store(config_store)
+llm = LLM(method='openai', api_key=os.getenv("OPENAI_API_KEY"))
+```
 
 ## 🧪 Testes
 
-Ainda não configurado.
-
-## 🐛 Problemas Conhecidos
-
-- **Memória Insuficiente na GPU**: Se você estiver rodando em um ambiente com GPU limitada, utilize modelos menores ou rode na CPU.
-- **Limitações de Token**: OpenAI tem limites de token em suas requisições, fique atento ao tamanho das consultas.
+A arquitetura modular e a classe `ComprehensiveEvaluator` facilitam a criação de testes de unidade para cada componente e testes de integração para o pipeline completo. A estrutura para testes futuros está em desenvolvimento.
 
 ## 🤝 Contribuições
 
-Contribuições são bem-vindas! Sinta-se à vontade para abrir issues e pull requests.
-
-1. Crie um fork do projeto
-2. Crie um branch para sua feature (`git checkout -b feature/AmazingFeature`)
-3. Comite suas mudanças (`git commit -m 'Add some AmazingFeature'`)
-4. Dê um push para o branch (`git push origin feature/AmazingFeature`)
-5. Abra um pull request
+Contribuições são bem-vindas\! Sinta-se à vontade para abrir issues e pull requests.
 
 ## 🛡️ Licença
 
 Este projeto está licenciado sob a [Licença MIT](https://opensource.org/licenses/MIT).
+
+```
+```
