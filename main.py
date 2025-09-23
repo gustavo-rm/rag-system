@@ -1,57 +1,76 @@
-from src.rag_system import RAGSystem
-from dotenv import load_dotenv
 import os
 
-# Carregar as variáveis de ambiente do .env
+from dotenv import load_dotenv
+
+# Carrega as variáveis de ambiente (chaves de API, etc.)
 load_dotenv()
 
-# Carregar as chaves de API das variáveis de ambiente
-var_pinecone_api_key = os.getenv("PINECONE_API_KEY")
-var_pinecone_environment = os.getenv("PINECONE_ENVIRONMENT")
-var_openai_api_key = os.getenv("OPENAI_API_KEY")
+# Importa todos os nossos componentes e a fábrica do Vector Store
+from src.chunker import Chunker
+from src.embedder import Embedder
+from src.stores import get_vector_store
+from src.llm import LLM
+from src.rag_system import RAGSystem
+
 
 def main():
-    # Definir o caminho do PDF
-    pdf_path = "data/pdfs/relevo-brasileiro.pdf"
+    # --- 1. Configuração dos Componentes ---
 
-    # Inicializar o sistema RAG com as configurações necessárias
+    # Configuração do Vector Store (usando ChromaDB local)
+    config_chroma = {
+        'type': 'chroma',
+        'path': 'data/chromaDB/',
+        'collection_name': 'rag_project'
+    }
+    vector_store = get_vector_store(config_chroma)
+
+    # Inicialização dos outros componentes
+    chunker = Chunker(chunk_size=512, chunk_overlap=50)
+    embedder = Embedder(method='sbert', model_name='paraphrase-multilingual-mpnet-base-v2')
+
+    # LLM local (padrão: Phi-3-mini)
+    llm = LLM(method='local')
+
+    # Para usar OpenAI, descomente a linha abaixo e configure a API_KEY no .env
+    # llm = LLM(method='openai', model_name='gpt-4o-mini', api_key=os.getenv("OPENAI_API_KEY"))
+
+    # --- 2. Montagem do Sistema RAG ---
     rag_system = RAGSystem(
-        pdf_path=pdf_path,
-        chunk_method="sentences",  # Chunking baseado em sentenças
-        chunk_size=100,  # Tamanho dos chunks
-        embedder_method="sbert",  # Usar OpenAI ou Sentence-BERT
-        openai_api_key=var_openai_api_key,
-        pinecone_api_key=var_pinecone_api_key,
-        pinecone_environment=var_pinecone_environment,
-        embedding_dimension=384,
-        index_name="my-vector-index",  # Nome do índice Pinecone
-        llm_method="local"  # Usar OpenAI ou local para LLM
+        chunker=chunker,
+        embedder=embedder,
+        vector_store=vector_store,
+        llm=llm
     )
 
-    # Etapa 1: Preparar os dados (extrair texto do PDF, chunkar e armazenar embeddings no Pinecone)
-    print("Preparando os dados...")
-    rag_system.prepare_data()
-    print("Dados preparados com sucesso!")
+    # --- 3. Execução do Pipeline ---
 
-    # Etapa 2: Receber a consulta do usuário
-    # user_query = input("Digite sua pergunta: ")
-    # OU
-    # Etapa 2: Utilizar consulta pronta
-    user_query = "Há montanhas no relevo brasileiro?"
-    reference_answer = "Não há montanhas no relevo brasileiro."
+    # Limpar dados antigos (opcional, bom para testes)
+    # vector_store.delete() 
 
-    # Etapa 3: Usar o sistema RAG para buscar e gerar uma resposta
-    print("Buscando resposta...")
-    answer, relevant_chunks = rag_system.query(user_query, reference_answer)
+    # Ingestão de um novo documento PDF
+    pdf_path = "data/pdfs/relevo-brasileiro.pdf"  # <-- SUBSTITUA PELO CAMINHO DO SEU PDF
+    if os.path.exists(pdf_path):
+        rag_system.setup_pipeline(pdf_path)
+    else:
+        print(f"Arquivo PDF não encontrado em '{pdf_path}'. Crie um para continuar.")
+        return
 
-    # Exibir a resposta final
-    print("\nResposta Final:")
-    print(answer)
+    # --- 4. Realizando Perguntas ---
 
-    # Exibir os chunks relevantes que foram usados para gerar a resposta
-    print("\nChunks Relevantes Utilizados:")
-    for i, chunk in enumerate(relevant_chunks):
-        print(f"Chunk {i+1}: {chunk}")
+    # Loop interativo para fazer perguntas
+    while True:
+        question = input("\nFaça sua pergunta (ou digite 'sair' para terminar): ")
+        if question.lower() == 'sair':
+            break
+
+        response = rag_system.ask(question)
+
+        # Imprimir a resposta e os contextos usados
+        print("\n--- Contextos Utilizados ---")
+        for i, context in enumerate(response['contexts']):
+            print(f"[{i + 1}] {context[:150]}...")
+        print("--------------------------")
+
 
 if __name__ == "__main__":
     main()

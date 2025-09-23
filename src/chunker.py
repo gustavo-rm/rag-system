@@ -1,124 +1,123 @@
-import nltk
-import spacy
+import re
+from typing import List
 
 
 class Chunker:
-    def __init__(self, method='sentences', chunk_size=100):
+    """
+    Uma classe para dividir texto em chunks de forma inteligente e recursiva.
+    Esta abordagem preserva a coesão semântica do texto ao tentar dividir
+    por separadores lógicos (parágrafos, sentenças) antes de recorrer a
+    separadores menos ideais. Também implementa sobreposição (overlap)
+    entre os chunks para evitar a perda de contexto.
+    """
+
+    def __init__(self, chunk_size: int = 512, chunk_overlap: int = 50):
         """
-        Inicializa a classe Chunker com o método de chunking e o tamanho do chunk.
+        Inicializa o Chunker.
 
         Parâmetros:
-        - method: Método de chunking. Pode ser 'sentences' (dividir por sentenças),
-                  'paragraphs' (dividir por parágrafos) ou 'tokens' (dividir por tokens).
-        - chunk_size: Tamanho máximo do chunk (em número de caracteres ou tokens, dependendo do método).
-
-        Se o método for 'tokens', o modelo SpaCy será carregado para processamento de tokens.
-        Se o método for 'sentences', o NLTK será utilizado para tokenização de sentenças.
+        - chunk_size (int): O tamanho máximo de cada chunk em número de caracteres.
+                            É crucial que este valor seja compatível com o limite
+                            do seu modelo de embedding.
+        - chunk_overlap (int): O número de caracteres de sobreposição entre chunks
+                               consecutivos para garantir a continuidade do contexto.
         """
-        self.method = method
+        if chunk_overlap >= chunk_size:
+            raise ValueError("O chunk_overlap deve ser menor que o chunk_size.")
+
         self.chunk_size = chunk_size
-        if method == 'tokens':
-            try:
-                self.nlp = spacy.load("en_core_web_sm")
-            except OSError:
-                print("Baixando modelo do spaCy...")
-                from spacy.cli import download
-                download("en_core_web_sm")
-                self.nlp = spacy.load("en_core_web_sm")
-        elif method == 'sentences':
-            nltk.download('punkt')
+        self.chunk_overlap = chunk_overlap
+        # Lista de separadores, do mais ao menos semanticamente relevante.
+        self.separators = ["\n\n", "\n", ". ", " ", ""]
 
-    def chunk_text(self, text):
+    def _split_text_with_separators(self, text: str, separators: List[str]) -> List[str]:
         """
-        Divide o texto de entrada em chunks com base no método especificado.
-
-        Parâmetros:
-        - text: Texto de entrada a ser dividido.
-
-        Retorna:
-        - Uma lista de chunks do texto.
-
-        O método de chunking pode ser baseado em sentenças, parágrafos ou tokens.
+        Tenta dividir o texto usando a lista de separadores de forma recursiva.
         """
-        if self.method == 'sentences':
-            return self._chunk_by_sentences(text)
-        elif self.method == 'paragraphs':
-            return self._chunk_by_paragraphs(text)
-        elif self.method == 'tokens':
-            return self._chunk_by_tokens(text)
+        final_chunks = []
+
+        # Pega o primeiro separador da lista.
+        separator = separators[0]
+        # Pega os separadores restantes para a chamada recursiva.
+        remaining_separators = separators[1:]
+
+        # Se o separador for vazio, dividimos por caractere.
+        if not separator:
+            splits = list(text)
         else:
-            raise ValueError("Método de chunking inválido.")
+            # Usa uma expressão regular para manter o separador no final do split
+            splits = re.split(f"({separator})", text)
+            splits = [s for s in splits if s]  # Remove strings vazias
 
-    def _chunk_by_sentences(self, text):
-        """
-        Divide o texto de entrada em chunks com base em sentenças.
+            # Agrupa o texto e o separador
+            merged_splits = []
+            temp_split = ""
+            for i in range(0, len(splits), 2):
+                part = splits[i]
+                sep = splits[i + 1] if i + 1 < len(splits) else ""
+                merged_splits.append(part + sep)
+            splits = [s for s in merged_splits if s]
 
-        Parâmetros:
-        - text: Texto de entrada a ser dividido.
-
-        Retorna:
-        - Uma lista de chunks, onde cada chunk contém uma ou mais sentenças, respeitando o tamanho máximo do chunk.
-        """
-        from nltk.tokenize import sent_tokenize
-        sentences = sent_tokenize(text)
-        chunks = []
         current_chunk = ""
-        for sentence in sentences:
-            if len(current_chunk) + len(sentence) <= self.chunk_size:
-                current_chunk += sentence + " "
-            else:
-                chunks.append(current_chunk.strip())
-                current_chunk = sentence + " "
-        if current_chunk:
-            chunks.append(current_chunk.strip())
-        return chunks
+        for s in splits:
+            # Se um único split já é maior que o chunk_size,
+            # chama a função recursivamente com os próximos separadores.
+            if len(s) > self.chunk_size:
+                if remaining_separators:
+                    # A aplicação recursiva acontece aqui
+                    final_chunks.extend(self._split_text_with_separators(s, remaining_separators))
+                else:
+                    # Se não há mais separadores, adicionamos o split "grande" mesmo assim.
+                    final_chunks.append(s)
 
-    def _chunk_by_paragraphs(self, text):
+            # Se o split atual, somado ao chunk corrente, exceder o tamanho,
+            # finalizamos o chunk corrente.
+            elif len(current_chunk + s) > self.chunk_size:
+                final_chunks.append(current_chunk)
+                current_chunk = s
+
+            # Senão, continuamos a construir o chunk corrente.
+            else:
+                current_chunk += s
+
+        if current_chunk:
+            final_chunks.append(current_chunk)
+
+        return final_chunks
+
+    def chunk_text(self, text: str) -> List[str]:
         """
-        Divide o texto de entrada em chunks com base em parágrafos.
+        Método principal para dividir o texto em chunks com sobreposição.
 
         Parâmetros:
-        - text: Texto de entrada a ser dividido.
+        - text (str): O texto de entrada a ser dividido.
 
         Retorna:
-        - Uma lista de chunks, onde cada chunk contém um ou mais parágrafos, respeitando o tamanho máximo do chunk.
+        - List[str]: Uma lista de chunks de texto.
         """
-        paragraphs = text.split("\n\n")
-        chunks = []
-        current_chunk = ""
-        for paragraph in paragraphs:
-            if len(current_chunk) + len(paragraph) <= self.chunk_size:
-                current_chunk += paragraph + "\n\n"
+        # 1. Primeiro, fazemos uma divisão inicial recursiva para que nenhum
+        #    elemento da lista seja maior que o chunk_size.
+        initial_splits = self._split_text_with_separators(text, self.separators)
+
+        # 2. Agora, agrupamos esses splits menores em chunks do tamanho desejado,
+        #    respeitando a sobreposição.
+        final_chunks = []
+        buffer = ""
+
+        for chunk in initial_splits:
+            # Se o buffer + o novo chunk for menor que o tamanho alvo, apenas adiciona
+            if len(buffer) + len(chunk) <= self.chunk_size:
+                buffer += chunk
             else:
-                chunks.append(current_chunk.strip())
-                current_chunk = paragraph + "\n\n"
-        if current_chunk:
-            chunks.append(current_chunk.strip())
-        return chunks
+                # Se exceder, finaliza o chunk atual
+                final_chunks.append(buffer)
 
-    def _chunk_by_tokens(self, text):
-        """
-        Divide o texto de entrada em chunks com base em tokens, utilizando o SpaCy para tokenização.
+                # O novo buffer começa com a sobreposição do chunk anterior
+                # e o chunk atual.
+                overlap_start = max(0, len(buffer) - self.chunk_overlap)
+                buffer = buffer[overlap_start:] + chunk
 
-        Parâmetros:
-        - text: Texto de entrada a ser dividido.
+        if buffer:
+            final_chunks.append(buffer)
 
-        Retorna:
-        - Uma lista de chunks, onde cada chunk contém um conjunto de tokens, respeitando o tamanho máximo do chunk.
-        """
-        doc = self.nlp(text)
-        chunks = []
-        current_chunk = []
-        current_token_count = 0
-        for sent in doc.sents:
-            sentence_length = len(sent)
-            if current_token_count + sentence_length <= self.chunk_size:
-                current_chunk.append(sent.text)
-                current_token_count += sentence_length
-            else:
-                chunks.append(" ".join(current_chunk))
-                current_chunk = [sent.text]
-                current_token_count = sentence_length
-        if current_chunk:
-            chunks.append(" ".join(current_chunk))
-        return chunks
+        return [chunk for chunk in final_chunks if chunk.strip()]
