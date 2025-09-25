@@ -1,5 +1,3 @@
-# /src/embedder.py (Versão Refatorada)
-
 from openai import OpenAI
 from sentence_transformers import SentenceTransformer
 import numpy as np

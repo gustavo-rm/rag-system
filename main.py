@@ -1,22 +1,19 @@
 import os
-
 from dotenv import load_dotenv
 
-# Carrega as variáveis de ambiente (chaves de API, etc.)
 load_dotenv()
 
-# Importa todos os nossos componentes e a fábrica do Vector Store
 from src.chunker import Chunker
 from src.embedder import Embedder
 from src.stores import get_vector_store
 from src.llm import LLM
+from src.reranker import ReRanker
 from src.rag_system import RAGSystem
 
 
 def main():
     # --- 1. Configuração dos Componentes ---
 
-    # Configuração do Vector Store (usando ChromaDB local)
     config_chroma = {
         'type': 'chroma',
         'path': 'data/chromaDB/',
@@ -27,37 +24,29 @@ def main():
     # Inicialização dos outros componentes
     chunker = Chunker(chunk_size=512, chunk_overlap=50)
     embedder = Embedder(method='sbert', model_name='paraphrase-multilingual-mpnet-base-v2')
-
-    # LLM local (padrão: Phi-3-mini)
+    reranker = ReRanker()  # <-- Instancia o novo componente
     llm = LLM(method='local')
-
-    # Para usar OpenAI, descomente a linha abaixo e configure a API_KEY no .env
-    # llm = LLM(method='openai', model_name='gpt-4o-mini', api_key=os.getenv("OPENAI_API_KEY"))
 
     # --- 2. Montagem do Sistema RAG ---
     rag_system = RAGSystem(
         chunker=chunker,
         embedder=embedder,
         vector_store=vector_store,
+        reranker=reranker,
         llm=llm
     )
 
     # --- 3. Execução do Pipeline ---
-
-    # Limpar dados antigos (opcional, bom para testes)
-    # vector_store.delete() 
-
-    # Ingestão de um novo documento PDF
-    pdf_path = "data/pdfs/relevo-brasileiro.pdf"  # <-- SUBSTITUA PELO CAMINHO DO SEU PDF
+    pdf_path = "data/pdfs/relevo-brasileiro.pdf"
     if os.path.exists(pdf_path):
+        # A linha abaixo pode ser comentada após a primeira execução para não reprocessar o mesmo PDF
         rag_system.setup_pipeline(pdf_path)
+        pass
     else:
         print(f"Arquivo PDF não encontrado em '{pdf_path}'. Crie um para continuar.")
         return
 
     # --- 4. Realizando Perguntas ---
-
-    # Loop interativo para fazer perguntas
     while True:
         question = input("\nFaça sua pergunta (ou digite 'sair' para terminar): ")
         if question.lower() == 'sair':
@@ -65,8 +54,7 @@ def main():
 
         response = rag_system.ask(question)
 
-        # Imprimir a resposta e os contextos usados
-        print("\n--- Contextos Utilizados ---")
+        print("\n--- Contextos Utilizados (após re-ranking) ---")
         for i, context in enumerate(response['contexts']):
             print(f"[{i + 1}] {context[:150]}...")
         print("--------------------------")

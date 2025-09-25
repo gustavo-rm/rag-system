@@ -3,7 +3,7 @@ from rouge_score import rouge_scorer
 from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 from typing import List, Dict, Any, Optional
 
-# RAGAs - Ferramenta poderosa para avaliação de RAG
+# RAGAs - Ferramenta para avaliação de RAG
 from ragas import evaluate
 from ragas.metrics import (
     faithfulness,
@@ -16,14 +16,14 @@ from datasets import Dataset
 # Baixar o punkt do NLTK se ainda não foi feito
 try:
     nltk.data.find('tokenizers/punkt')
-except LookupError:  # CORREÇÃO 2: Usar LookupError
+except LookupError:  # Usar LookupError
     print("Baixando o pacote 'punkt' do NLTK...")
     nltk.download('punkt')
 
 
 class ComprehensiveEvaluator:
     """
-    Um avaliador completo que combina métricas clássicas (BLEU, ROUGE)
+    Um avaliador que combina métricas clássicas (BLEU, ROUGE)
     com métricas modernas de avaliação de RAG (via RAGAs).
     """
 
