@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from src.query_transformers import NoOpTransformer, HyDETransformer, MultiQueryTransformer
 from src.chunker import Chunker
 from src.embedder import Embedder
 from src.stores import get_vector_store
@@ -24,8 +25,20 @@ def main():
     # Inicialização dos outros componentes
     chunker = Chunker(chunk_size=512, chunk_overlap=50)
     embedder = Embedder(method='sbert', model_name='paraphrase-multilingual-mpnet-base-v2')
-    reranker = ReRanker()  # <-- Instancia o novo componente
+    reranker = ReRanker()
     llm = LLM(method='local')
+
+    # --- NOVA SEÇÃO: Escolha da Estratégia de Transformação de Consulta ---
+    # Para testar, simplesmente comente e descomente as linhas abaixo.
+
+    # Estratégia 1: Não fazer nada (comportamento original)
+    # query_transformer = NoOpTransformer()
+
+    # Estratégia 2: Usar HyDE para gerar um documento hipotético
+    query_transformer = HyDETransformer(llm=llm)
+
+    # Estratégia 3: Usar Multi-Query para gerar variações da pergunta
+    # query_transformer = MultiQueryTransformer(llm=llm, num_queries=3)
 
     # --- 2. Montagem do Sistema RAG ---
     rag_system = RAGSystem(
@@ -33,7 +46,8 @@ def main():
         embedder=embedder,
         vector_store=vector_store,
         reranker=reranker,
-        llm=llm
+        llm=llm,
+        query_transformer=query_transformer
     )
 
     # --- 3. Execução do Pipeline ---
