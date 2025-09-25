@@ -1,83 +1,100 @@
+import nltk
 from rouge_score import rouge_scorer
 from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
-import nltk
+from typing import List, Dict, Any, Optional
 
-nltk.download('punkt')
+# RAGAs - Ferramenta poderosa para avaliação de RAG
+from ragas import evaluate
+from ragas.metrics import (
+    faithfulness,
+    answer_relevancy,
+    context_precision,
+    context_recall,
+)
+from datasets import Dataset
+
+# Baixar o punkt do NLTK se ainda não foi feito
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:  # CORREÇÃO 2: Usar LookupError
+    print("Baixando o pacote 'punkt' do NLTK...")
+    nltk.download('punkt')
 
 
-class Evaluator:
-    def __init__(self, metrics=None):
-        """
-        Inicializa o Evaluator com as métricas desejadas.
-        - metrics: lista de métricas que deseja calcular ('bleu', 'rouge').
-        """
-        self.available_metrics = ['bleu', 'rouge']
-        self.metrics = metrics if metrics else ['bleu', 'rouge']
+class ComprehensiveEvaluator:
+    """
+    Um avaliador completo que combina métricas clássicas (BLEU, ROUGE)
+    com métricas modernas de avaliação de RAG (via RAGAs).
+    """
 
-        # Verificar se as métricas solicitadas são válidas
-        for metric in self.metrics:
-            if metric not in self.available_metrics:
-                raise ValueError(f"Métrica {metric} não é suportada. Métricas disponíveis: {self.available_metrics}")
+    def __init__(self):
+        """Inicializa os scorers necessários."""
+        self.rouge_scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
+        # Lista de métricas do RAGAs atualizada
+        self.ragas_metrics = [faithfulness, answer_relevancy, context_precision, context_recall]
+        print("ComprehensiveEvaluator inicializado.")
 
-        # Inicializa o RougeScorer se ROUGE for solicitado
-        if 'rouge' in self.metrics:
-            self.rouge_scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
-
-    def evaluate(self, generated_response, reference_response):
-        """
-        Avalia a resposta gerada com base nas métricas solicitadas.
-        Retorna os scores das métricas escolhidas.
-        """
+    def _compute_classic_metrics(self, generated_answer: str, reference_answer: str) -> Dict[str, float]:
+        """Calcula as métricas clássicas que dependem de uma resposta de referência."""
         results = {}
 
-        if 'bleu' in self.metrics:
-            bleu_score = self.compute_bleu(generated_response, reference_response)
-            results['bleu'] = bleu_score
+        # --- Cálculo do BLEU ---
+        reference_tokens = [nltk.word_tokenize(reference_answer.lower())]
+        generated_tokens = nltk.word_tokenize(generated_answer.lower())
 
-        if 'rouge' in self.metrics:
-            rouge_scores = self.compute_rouge(generated_response, reference_response)
-            results.update(rouge_scores)  # Adiciona os resultados ROUGE ao dicionário
+        # CORREÇÃO 3: Instanciando a classe primeiro para clareza
+        chencherry = SmoothingFunction()
+        bleu_score = sentence_bleu(
+            reference_tokens,
+            generated_tokens,
+            smoothing_function=chencherry.method1
+        )
+        results['bleu'] = bleu_score
+
+        # --- Cálculo do ROUGE ---
+        rouge_scores = self.rouge_scorer.score(reference_answer, generated_answer)
+        results['rouge1'] = rouge_scores['rouge1'].fmeasure
+        results['rouge2'] = rouge_scores['rouge2'].fmeasure
+        results['rougeL'] = rouge_scores['rougeL'].fmeasure
 
         return results
 
-    def compute_bleu(self, generated_response, reference_response):
-        """
-        Calcula a métrica BLEU para a resposta gerada.
-        """
-        reference_tokens = [nltk.word_tokenize(reference_response)]
-        generated_tokens = nltk.word_tokenize(generated_response)
-
-        # Corrigir a atribuição do smoothing_function
-        smoothing_fn = SmoothingFunction().method1
-
-        # Calcular a pontuação BLEU com suavização
-        bleu_score = sentence_bleu(reference_tokens, generated_tokens, smoothing_function=smoothing_fn)
-        return bleu_score
-
-    def compute_rouge(self, generated_response, reference_response):
-        """
-        Calcula as métricas ROUGE-1, ROUGE-2, e ROUGE-L.
-        """
-        scores = self.rouge_scorer.score(reference_response, generated_response)
-        return {
-            'rouge1': scores['rouge1'].fmeasure,
-            'rouge2': scores['rouge2'].fmeasure,
-            'rougeL': scores['rougeL'].fmeasure
+    def _compute_ragas_metrics(self, question: str, generated_answer: str, contexts: List[str],
+                               reference_answer: str) -> Dict[str, float]:
+        """Calcula as métricas do RAGAs que avaliam o processo de recuperação e geração."""
+        data = {
+            "question": [question],
+            "answer": [generated_answer],
+            "contexts": [contexts],
+            "ground_truth": [reference_answer]
         }
+        dataset = Dataset.from_dict(data)
 
-    def add_metric(self, metric_name):
-        """
-        Adiciona uma nova métrica para ser calculada.
-        """
-        if metric_name not in self.available_metrics:
-            raise ValueError(f"Métrica {metric_name} não é suportada.")
+        score = evaluate(dataset, metrics=self.ragas_metrics)
+        score.pop('dataset', None)  # Remove o objeto do dataset para um resultado mais limpo
+        return score
 
-        if metric_name not in self.metrics:
-            self.metrics.append(metric_name)
+    def evaluate(
+            self,
+            question: str,
+            generated_answer: str,
+            retrieved_contexts: List[str],
+            reference_answer: Optional[str] = None
+    ) -> Dict[str, float]:
+        """
+        Executa uma avaliação completa do resultado de uma consulta RAG.
+        """
+        all_results = {}
 
-    def remove_metric(self, metric_name):
-        """
-        Remove uma métrica da lista de métricas a serem calculadas.
-        """
-        if metric_name in self.metrics:
-            self.metrics.remove(metric_name)
+        if reference_answer:
+            classic_scores = self._compute_classic_metrics(generated_answer, reference_answer)
+            all_results.update(classic_scores)
+
+            ragas_scores = self._compute_ragas_metrics(question, generated_answer, retrieved_contexts, reference_answer)
+            all_results.update(ragas_scores)
+        else:
+            print("Nenhuma resposta de referência fornecida, pulando métricas clássicas e de recall do RAGAs.")
+            # Aqui você poderia rodar RAGAs com métricas que não precisam de `ground_truth`
+            # Ex: evaluate(dataset, metrics=[faithfulness, answer_relevancy, context_precision])
+
+        return all_results

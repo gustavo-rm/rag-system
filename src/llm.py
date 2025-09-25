@@ -1,78 +1,103 @@
-from openai import OpenAI
+# /src/llm.py (Versão Refatorada)
+
 import torch
-from transformers import pipeline
+from transformers import pipeline, AutoTokenizer, AutoModelForCausalLM
+from openai import OpenAI
+from typing import Optional
+
+
+# --- Recomendações de Modelos Locais (Instruction-Tuned) ---
+# Modelos menores e mais rápidos, ótimos para começar:
+# - "microsoft/Phi-3-mini-4k-instruct"
+# Modelos maiores e mais capazes (requerem mais VRAM):
+# - "mistralai/Mistral-7B-Instruct-v0.2"
+# - "meta-llama/Meta-Llama-3-8B-Instruct"
 
 class LLM:
-    def __init__(self, method='openai', openai_api_key=None, local_model_name="EleutherAI/gpt-neo-2.7B"):
+    def __init__(self, method: str = 'local', model_name: Optional[str] = None, api_key: Optional[str] = None):
         """
-        Inicializa a classe LLM com base no método desejado para gerar respostas.
+        Inicializa a classe LLM.
 
         Parâmetros:
-        - method: Define qual método será usado, 'openai' para a API da OpenAI ou 'local' para um modelo local do Hugging Face.
-        - openai_api_key: Chave da API da OpenAI, necessária se o método escolhido for 'openai'.
-        - local_model_name: Nome do modelo local a ser usado (disponível no Hugging Face), necessário se o método escolhido for 'local'.
+        - method (str): 'openai' ou 'local'.
+        - model_name (str): Nome do modelo a ser usado.
+        - api_key (str): Chave da API da OpenAI, necessária para method='openai'.
         """
         self.method = method
-        if method == 'openai':
-            if openai_api_key is None:
-                raise ValueError("Chave da API da OpenAI é necessária para usar OpenAI LLM.")
-            self.client = OpenAI(api_key=openai_api_key)
-        elif method == 'local':
-            # Detecta se uma GPU está disponível e escolhe o dispositivo adequado (GPU ou CPU).
-            device = 0 if torch.cuda.is_available() else -1  # 0 para GPU, -1 para CPU
+        self.model_name = model_name
 
-            # Inicializa o pipeline de geração de texto do Hugging Face
+        if method == 'openai':
+            if not api_key:
+                raise ValueError("Chave da API é necessária para o método 'openai'.")
+            self.client = OpenAI(api_key=api_key)
+            if not self.model_name:
+                self.model_name = "gpt-3.5-turbo"  # Default para OpenAI
+
+        elif method == 'local':
+            if not self.model_name:
+                self.model_name = "microsoft/Phi-3-mini-4k-instruct"  # Um default moderno e leve
+
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            print(f"Carregando modelo local '{self.model_name}' no dispositivo: {device}")
+
+            # Usar AutoModel e AutoTokenizer para mais controle
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+            self.model = AutoModelForCausalLM.from_pretrained(
+                self.model_name,
+                torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+                device_map="auto"  # Deixa a biblioteca decidir a melhor alocação (CPU/GPU)
+            )
+            # O pipeline ainda é uma forma fácil de usar o modelo e o tokenizador juntos
             self.generator = pipeline(
                 "text-generation",
-                model=local_model_name,
-                pad_token_id=50256,  # Especifica o token de preenchimento adequado ao modelo
-                truncation=True,  # Trunca a entrada longa automaticamente
-                device=device,  # Define GPU se disponível
-                torch_dtype=torch.float16  # Usa half-precision (FP16) para reduzir o uso de memória
+                model=self.model,
+                tokenizer=self.tokenizer,
+                device_map="auto"
             )
         else:
-            raise ValueError("Método de LLM inválido.")
+            raise ValueError("Método de LLM inválido. Escolha 'openai' ou 'local'.")
 
-    def generate_response(self, prompt, max_new_tokens=100, temperature=0.7):
+    def generate_response(self, prompt: str, system_prompt: str, max_new_tokens: int = 250,
+                          temperature: float = 0.1) -> str:
         """
-        Gera uma resposta para o prompt dado, usando o método definido (OpenAI ou local).
-
-        Parâmetros:
-        - prompt: String com o texto que será enviado ao modelo para gerar a resposta.
-        - max_new_tokens: Número máximo de tokens a serem gerados na resposta (apenas para o modelo local).
-        - temperature: Define a aleatoriedade da geração de texto (valores mais baixos produzem respostas mais determinísticas).
-
-        Retorna:
-        - A resposta gerada pelo modelo em forma de string.
+        Gera uma resposta para o prompt, considerando um prompt de sistema.
         """
         if self.method == 'openai':
-            # Faz uma requisição à API da OpenAI e obtém a resposta
-            response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo-0125",
-                messages=[
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ]
-            )
-            # Extrai e retorna o conteúdo da resposta
-            answer = response['choices'][0]['message']['content'].strip()
-            return answer
+            try:
+                response = self.client.chat.completions.create(
+                    model=self.model_name,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=temperature
+                )
+                return response.choices[0].message.content.strip()
+            except Exception as e:
+                print(f"Erro ao chamar a API da OpenAI: {e}")
+                return "Erro ao gerar resposta da OpenAI."
 
         elif self.method == 'local':
-            # Gera uma resposta usando o modelo local
-            response = self.generator(
-                prompt,
+            # Formatação específica para modelos de chat que usam tokens especiais
+            # (Ex: Phi-3, Llama 3, Mistral)
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt},
+            ]
+            # `apply_chat_template` formata o prompt da maneira que o modelo espera
+            full_prompt = self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+
+            outputs = self.generator(
+                full_prompt,
                 max_new_tokens=max_new_tokens,
                 do_sample=True,
-                temperature=temperature,
-                truncation=True  # Trunca a resposta se ela exceder o número máximo de tokens
+                temperature=temperature if temperature > 0 else None,
+                top_p=0.95,
+                eos_token_id=self.tokenizer.eos_token_id
             )
 
-            # Verifica o conteúdo da resposta gerada pelo modelo local
-            print(f"Resposta do modelo local: {response}")
-
-            # Extrai e retorna o texto gerado corretamente
-            answer = response[0]['generated_text'].strip() if 'generated_text' in response[0] else response[0]['text'].strip()
+            # CORREÇÃO CRÍTICA: Remove o prompt da saída para retornar apenas a resposta.
+            result = outputs[0]['generated_text']
+            # O `full_prompt` é o que foi enviado, a resposta é o que vem depois
+            answer = result[len(full_prompt):].strip()
             return answer
