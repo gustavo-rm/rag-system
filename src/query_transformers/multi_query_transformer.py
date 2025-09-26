@@ -1,6 +1,6 @@
 from typing import List
 from .base import QueryTransformer
-from ..llm import LLM
+from src.components.llm import LLM
 
 
 class MultiQueryTransformer(QueryTransformer):

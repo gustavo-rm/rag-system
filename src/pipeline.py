@@ -1,11 +1,11 @@
 from typing import Dict, Any
 
-from .chunker import Chunker
-from .embedder import Embedder
-from .llm import LLM
-from .pdf_processor import PDFProcessor
+from src.ingestion.chunker import Chunker
+from src.components.embedder import Embedder
+from src.components.llm import LLM
+from src.ingestion.pdf_processor import PDFProcessor
 from .query_transformers import QueryTransformer
-from .reranker import ReRanker
+from src.components.reranker import ReRanker
 from .stores.base import VectorStore
 
 

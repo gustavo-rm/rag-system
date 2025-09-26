@@ -3,13 +3,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from src.query_transformers import NoOpTransformer, HyDETransformer, MultiQueryTransformer
-from src.chunker import Chunker
-from src.embedder import Embedder
+from src.query_transformers import MultiQueryTransformer
+from src.ingestion.chunker import Chunker
+from src.components.embedder import Embedder
 from src.stores import get_vector_store
-from src.llm import LLM
-from src.reranker import ReRanker
-from src.rag_system import RAGSystem
+from src.components.llm import LLM
+from src.components.reranker import ReRanker
+from src.pipeline import RAGSystem
 
 
 def main():

@@ -2,9 +2,9 @@ import argparse
 from sentence_transformers import SentenceTransformer, losses
 from torch.utils.data import DataLoader
 # Importa os componentes necessários do nosso código-fonte em 'src'
-from src.llm import LLM
-from src.pdf_processor import PDFProcessor
-from src.chunker import Chunker
+from src.components.llm import LLM
+from src.ingestion.pdf_processor import PDFProcessor
+from src.ingestion.chunker import Chunker
 from src.training.generators import FileTripletGenerator, SyntheticTripletGenerator
 
 def main():

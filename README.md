@@ -36,7 +36,7 @@ A arquitetura foi refatorada para ser modular e escalável, utilizando pacotes p
 │   ├── evaluator.py           # Avaliador completo com RAGAs
 │   ├── llm.py                 # Geração de texto com LLMs
 │   ├── pdf_processor.py       # Extração e limpeza de PDFs
-│   ├── rag_system.py          # Orquestrador principal do pipeline
+│   ├── pipeline.py          # Orquestrador principal do pipeline
 │   └── utils.py               # (Funções utilitárias)
 │
 ├── main.py                    # Script principal para executar o sistema

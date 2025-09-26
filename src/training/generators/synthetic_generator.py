@@ -3,7 +3,7 @@ from typing import List
 from sentence_transformers.readers import InputExample
 from tqdm import tqdm
 from .base import TripletGenerator
-from ...llm import LLM
+from src.components.llm import LLM
 
 
 class SyntheticTripletGenerator(TripletGenerator):
