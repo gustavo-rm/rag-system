@@ -24,7 +24,9 @@ def main():
 
     # Inicialização dos outros componentes
     chunker = Chunker(chunk_size=512, chunk_overlap=50)
-    embedder = Embedder(method='sbert', model_name='paraphrase-multilingual-mpnet-base-v2')
+    # Aponta para o caminho local do modelo treinado
+    finetuned_model_path = 'models/finetuned-embedder'
+    embedder = Embedder(method='sbert', model_name=finetuned_model_path)
     reranker = ReRanker()
     llm = LLM(method='local')
 
@@ -35,10 +37,10 @@ def main():
     # query_transformer = NoOpTransformer()
 
     # Estratégia 2: Usar HyDE para gerar um documento hipotético
-    query_transformer = HyDETransformer(llm=llm)
+    # query_transformer = HyDETransformer(llm=llm)
 
     # Estratégia 3: Usar Multi-Query para gerar variações da pergunta
-    # query_transformer = MultiQueryTransformer(llm=llm, num_queries=3)
+    query_transformer = MultiQueryTransformer(llm=llm, num_queries=3)
 
     # --- 2. Montagem do Sistema RAG ---
     rag_system = RAGSystem(

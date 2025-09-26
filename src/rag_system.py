@@ -23,11 +23,11 @@ class RAGSystem:
         self.query_transformer = query_transformer
 
         self.system_prompt = """Você é um assistente especialista e atencioso. Sua tarefa é responder à pergunta do usuário estritamente com base no contexto fornecido.
-Regras:
-1. Analise o contexto e a pergunta cuidadosamente.
-2. Responda de forma concisa e direta, usando apenas as informações encontradas no contexto.
-3. Se a resposta não estiver no contexto, responda exatamente: 'A informação não foi encontrada nos documentos fornecidos.'
-4. Não adicione nenhuma informação externa ou conhecimento prévio."""
+                            Regras:
+                            1. Analise o contexto e a pergunta cuidadosamente.
+                            2. Responda de forma concisa e direta, usando apenas as informações encontradas no contexto.
+                            3. Se a resposta não estiver no contexto, responda exatamente: 'A informação não foi encontrada nos documentos fornecidos.'
+                            4. Não adicione nenhuma informação externa ou conhecimento prévio."""
 
     def setup_pipeline(self, pdf_path: str):
         # (Este método permanece o mesmo, sem alterações)
