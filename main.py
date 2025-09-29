@@ -1,79 +1,122 @@
 import os
 from dotenv import load_dotenv
 
+# --- Carregamento das Variáveis de Ambiente ---
+# Carrega chaves de API e outras configurações do arquivo .env
 load_dotenv()
 
-from src.query_transformers import MultiQueryTransformer
+# --- Importação dos Componentes da Arquitetura ---
+# Ingestion Pipeline
 from src.ingestion.chunker import Chunker
-from src.components.embedder import Embedder
-from src.stores import get_vector_store
-from src.components.llm import LLM
-from src.components.reranker import ReRanker
-from src.pipeline import RAGSystem
 
+# Core AI Components
+from src.components.embedder import Embedder
+from src.components.reranker import ReRanker
+from src.components.llm import LLM
+from src.caching.cache_manager import CacheManager
+from src.caching.semantic_cache import SemanticCache
+
+# Storage Backend
+from src.stores import get_vector_store
+
+# Query Transformation Strategies
+from src.query_transformers import NoOpTransformer, MultiQueryTransformer, HyDETransformer
+
+# Main Application Logic
+from src.pipeline import RAGSystem
+from src.chat.chatbot import Chatbot
 
 def main():
-    # --- 1. Configuração dos Componentes ---
+    """
+    Função principal que configura e executa o Chatbot RAG.
+    """
+    print("--- 1. CONFIGURAÇÃO DOS COMPONENTES ---")
 
-    config_chroma = {
+    # --- Configuração do Armazenamento Vetorial (Vector Store) ---
+    # Escolha entre 'chroma' (local) ou 'pinecone' (nuvem)
+    config_store = {
         'type': 'chroma',
         'path': 'data/chromaDB/',
         'collection_name': 'rag_project'
     }
-    vector_store = get_vector_store(config_chroma)
+    vector_store = get_vector_store(config_store)
 
-    # Inicialização dos outros componentes
+    # --- Configuração dos Componentes de Ingestão e IA ---
     chunker = Chunker(chunk_size=512, chunk_overlap=50)
-    # Aponta para o caminho local do modelo treinado
-    finetuned_model_path = 'models/finetuned-embedder'
-    embedder = Embedder(method='sbert', model_name=finetuned_model_path)
-    reranker = ReRanker()
-    llm = LLM(method='local')
 
-    # --- NOVA SEÇÃO: Escolha da Estratégia de Transformação de Consulta ---
-    # Para testar, simplesmente comente e descomente as linhas abaixo.
+    # Use um modelo genérico ou o seu modelo treinado
+    # finetuned_model_path = './models/finetuned-embedder'
+    embedder = Embedder(method='sbert', model_name='paraphrase-multilingual-mpnet-base-v2')
+    # embedder = Embedder(method='sbert', model_name=finetuned_model_path) # Para usar o modelo treinado
 
-    # Estratégia 1: Não fazer nada (comportamento original)
-    # query_transformer = NoOpTransformer()
+    reranker = ReRanker(model_name='cross-encoder/ms-marco-MiniLM-L-6-v2')
+    llm = LLM(method='local', model_name='microsoft/Phi-3-mini-4k-instruct')
 
-    # Estratégia 2: Usar HyDE para gerar um documento hipotético
-    # query_transformer = HyDETransformer(llm=llm)
+    # Para usar OpenAI, descomente a linha abaixo e configure a API_KEY no .env
+    # llm = LLM(method='openai', model_name='gpt-4o-mini', api_key=os.getenv("OPENAI_API_KEY"))
 
-    # Estratégia 3: Usar Multi-Query para gerar variações da pergunta
-    query_transformer = MultiQueryTransformer(llm=llm, num_queries=3)
+    # --- Configuração das Estratégias de Otimização ---
+    # --- Criar um dicionário com todas as estratégias de transformação disponíveis ---
+    available_transformers = {
+        "NoOpTransformer": NoOpTransformer(),
+        "HyDETransformer": HyDETransformer(llm=llm),
+        "MultiQueryTransformer": MultiQueryTransformer(llm=llm, num_queries=3)
+    }
 
-    # --- 2. Montagem do Sistema RAG ---
+    # Configuração do Cache de Duas Camadas
+    embedding_dimension = embedder.model.get_sentence_embedding_dimension()
+    exact_cache = CacheManager()
+    semantic_cache = SemanticCache(dimension=embedding_dimension, similarity_threshold=0.92)
+
+
+    print("\n--- 2. MONTAGEM DOS SISTEMAS ---")
+
+    # O RAGSystem é a base de conhecimento que responde a perguntas autônomas
     rag_system = RAGSystem(
         chunker=chunker,
         embedder=embedder,
         vector_store=vector_store,
         reranker=reranker,
         llm=llm,
-        query_transformer=query_transformer
+        query_transformer=available_transformers["NoOpTransformer"]
     )
 
-    # --- 3. Execução do Pipeline ---
+    # O Chatbot é a camada de conversação que gerencia o histórico e o cache
+    chatbot = Chatbot(
+        llm=llm,
+        rag_system=rag_system,
+        cache_manager=exact_cache,
+        semantic_cache=semantic_cache,
+        transformers=available_transformers
+    )
+
+
+    print("\n--- 3. PIPELINE DE INGESTÃO DE DADOS ---")
+
     pdf_path = "data/pdfs/relevo-brasileiro.pdf"
     if os.path.exists(pdf_path):
-        # A linha abaixo pode ser comentada após a primeira execução para não reprocessar o mesmo PDF
-        rag_system.setup_pipeline(pdf_path)
-        pass
+        # A linha abaixo deve ser executada apenas uma vez por documento
+        # para processar e armazenar seus embeddings.
+        # Após a primeira execução, comente-a para não reprocessar desnecessariamente.
+        # rag_system.setup_pipeline(pdf_path)
+        print(f"Sistema pronto para consultar o documento: {pdf_path}")
+        pass # Comente esta linha e descomente a de cima para a ingestão
     else:
-        print(f"Arquivo PDF não encontrado em '{pdf_path}'. Crie um para continuar.")
-        return
+        print(f"AVISO: Arquivo PDF não encontrado em '{pdf_path}'. O sistema só responderá com o conhecimento geral do LLM.")
 
-    # --- 4. Realizando Perguntas ---
+
+    print("\n--- 4. INICIANDO O CHAT INTERATIVO ---")
+    print("\n\nAssistente de Documentos iniciado! Faça sua pergunta.")
+    print("Digite 'sair' para terminar a conversa.")
+
     while True:
-        question = input("\nFaça sua pergunta (ou digite 'sair' para terminar): ")
-        if question.lower() == 'sair':
+        user_question = input("\nVocê: ")
+        if user_question.lower() in ['sair', 'exit', 'quit']:
+            print("Assistente: Até logo!")
             break
 
-        response = rag_system.ask(question)
-
-        print("\n--- Contextos Utilizados (após re-ranking) ---")
-        for i, context in enumerate(response['contexts']):
-            print(f"[{i + 1}] {context[:150]}...")
-        print("--------------------------")
+        assistant_response = chatbot.chat(user_question)
+        print(f"Assistente: {assistant_response}")
 
 
 if __name__ == "__main__":

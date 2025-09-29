@@ -11,6 +11,7 @@ transformers    # Para carregar e usar modelos locais do Hugging Face
 torch           # Framework principal de deep learning.
 accelerate      # Ajuda a carregar modelos grandes de forma eficiente no Transformers
 bitsandbytes    # Ajuda a carregar modelos em 8-bit ou 4-bit, economizando VRAM
+faiss-cpu
 
 # --- Vector Stores (Escolha um ou ambos) ---
 # Para armazenar e buscar os vetores de embedding

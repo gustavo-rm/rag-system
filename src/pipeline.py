@@ -60,6 +60,9 @@ class RAGSystem:
         for embedding in query_embeddings:
             all_candidate_docs.extend(self.vector_store.search(embedding, top_k=retrieval_top_k))
 
+        # DEBUG
+        print(f"INFO: Total de documentos brutos recuperados (antes da desduplicação): {len(all_candidate_docs)}")
+
         # Desduplicar os resultados, mantendo o de maior score se houver sobreposição
         unique_docs_dict = {doc['id']: doc for doc in
                             sorted(all_candidate_docs, key=lambda x: x.get('score', 0), reverse=True)}

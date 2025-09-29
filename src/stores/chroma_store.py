@@ -27,19 +27,28 @@ class ChromaStore(VectorStore):
         print(f"{len(chunks)} embeddings armazenados no ChromaDB.")
 
     def search(self, query_embedding: List[float], top_k: int = 5) -> List[Dict[str, Any]]:
+        """
+        Busca os chunks de texto mais relevantes para um embedding de consulta.
+        Retorna uma lista de dicionários no formato padronizado com 'metadata'.
+        """
         results = self.collection.query(
             query_embeddings=[query_embedding],
             n_results=top_k
         )
 
-        # Estrutura o resultado para ser similar ao do Pinecone e mais fácil de usar
         formatted_results = []
         if results and results['documents']:
-            for i in range(len(results['documents'][0])):
+            documents = results['documents'][0]
+            distances = results['distances'][0]
+            ids = results['ids'][0]
+            # metadatas = results['metadatas'][0]  # Chroma também pode retornar metadados
+
+            for i in range(len(documents)):
+                # Garante que a saída seja idêntica à do PineconeStore
                 formatted_results.append({
-                    'id': results['ids'][0][i],
-                    'score': 1 - results['distances'][0][i],  # Converte distância para similaridade
-                    'metadata': {'text': results['documents'][0][i]}
+                    'id': ids[i],
+                    'score': 1 - distances[i],  # Converte distância para similaridade
+                    'metadata': {'text': documents[i]}
                 })
         return formatted_results
 
