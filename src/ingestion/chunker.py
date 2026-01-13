@@ -28,7 +28,9 @@ class Chunker:
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         # Lista de separadores, do mais ao menos semanticamente relevante.
-        self.separators = ["\n\n", "\n", ". ", " ", ""]
+        # Adicionados ? e ! para respeitar frases interrogativas/exclamativas
+        # A ordem importa: primeiro parágrafos, depois frases, depois palavras.
+        self.separators = ["\n\n", "\n", ". ", "? ", "! ", " ", ""]
 
     def _split_text_with_separators(self, text: str, separators: List[str]) -> List[str]:
         """
@@ -46,7 +48,8 @@ class Chunker:
             splits = list(text)
         else:
             # Usa uma expressão regular para manter o separador no final do split
-            splits = re.split(f"({separator})", text)
+            # re.escape garante que '.' ou '?' sejam lidos como texto, não comando regex
+            splits = re.split(f"({re.escape(separator)})", text)
             splits = [s for s in splits if s]  # Remove strings vazias
 
             # Agrupa o texto e o separador
@@ -110,14 +113,16 @@ class Chunker:
                 buffer += chunk
             else:
                 # Se exceder, finaliza o chunk atual
-                final_chunks.append(buffer)
+                # .strip() evita salvar chunks cheios de espaços vazios nas pontas
+                if buffer.strip():
+                    final_chunks.append(buffer.strip())
 
                 # O novo buffer começa com a sobreposição do chunk anterior
                 # e o chunk atual.
                 overlap_start = max(0, len(buffer) - self.chunk_overlap)
                 buffer = buffer[overlap_start:] + chunk
 
-        if buffer:
-            final_chunks.append(buffer)
+        if buffer and buffer.strip():
+            final_chunks.append(buffer.strip())
 
-        return [chunk for chunk in final_chunks if chunk.strip()]
+        return final_chunks
