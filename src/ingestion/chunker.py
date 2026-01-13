@@ -4,57 +4,59 @@ from typing import List
 
 class Chunker:
     """
-    Uma classe para dividir texto em chunks de forma inteligente e recursiva.
-    Esta abordagem preserva a coesão semântica do texto ao tentar dividir
-    por separadores lógicos (parágrafos, sentenças) antes de recorrer a
-    separadores menos ideais. Também implementa sobreposição (overlap)
-    entre os chunks para evitar a perda de contexto.
+    Responsável por dividir textos longos em pedaços menores (chunks) preservando a coesão semântica.
+
+    Utiliza uma abordagem recursiva baseada numa hierarquia de separadores
+    (parágrafos -> sentenças -> palavras) para garantir que o texto não seja cortado
+    no meio de uma ideia importante.
     """
 
     def __init__(self, chunk_size: int = 512, chunk_overlap: int = 50):
         """
-        Inicializa o Chunker.
+        Inicializa o Chunker com configurações de tamanho e sobreposição.
 
-        Parâmetros:
-        - chunk_size (int): O tamanho máximo de cada chunk em número de caracteres.
-                            É crucial que este valor seja compatível com o limite
-                            do seu modelo de embedding.
-        - chunk_overlap (int): O número de caracteres de sobreposição entre chunks
-                               consecutivos para garantir a continuidade do contexto.
+        Args:
+            chunk_size (int): O tamanho máximo de caracteres permitido por chunk.
+                              Deve ser ajustado conforme o limite de tokens do modelo de Embedding.
+            chunk_overlap (int): Quantidade de caracteres que se repetem entre o final de um chunk
+                                 e o início do próximo. Garante continuidade de contexto.
+
+        Raises:
+            ValueError: Se o chunk_overlap for maior ou igual ao chunk_size.
         """
         if chunk_overlap >= chunk_size:
             raise ValueError("O chunk_overlap deve ser menor que o chunk_size.")
 
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
-        # Lista de separadores, do mais ao menos semanticamente relevante.
-        # Adicionados ? e ! para respeitar frases interrogativas/exclamativas
-        # A ordem importa: primeiro parágrafos, depois frases, depois palavras.
+
+        # Hierarquia de separadores: tenta quebrar por parágrafo, depois por frase, depois por palavra.
         self.separators = ["\n\n", "\n", ". ", "? ", "! ", " ", ""]
 
     def _split_text_with_separators(self, text: str, separators: List[str]) -> List[str]:
         """
-        Tenta dividir o texto usando a lista de separadores de forma recursiva.
+        (Método Interno) Tenta dividir o texto recursivamente usando a lista de separadores.
+
+        Args:
+            text (str): O texto a ser dividido.
+            separators (List[str]): Lista de separadores restantes a serem tentados.
+
+        Returns:
+            List[str]: Lista de segmentos de texto que respeitam o tamanho máximo.
         """
         final_chunks = []
-
-        # Pega o primeiro separador da lista.
         separator = separators[0]
-        # Pega os separadores restantes para a chamada recursiva.
         remaining_separators = separators[1:]
 
-        # Se o separador for vazio, dividimos por caractere.
         if not separator:
             splits = list(text)
         else:
-            # Usa uma expressão regular para manter o separador no final do split
-            # re.escape garante que '.' ou '?' sejam lidos como texto, não comando regex
+            # Uso de re.escape para evitar que caracteres como '.' ou '?' quebrem o Regex.
             splits = re.split(f"({re.escape(separator)})", text)
-            splits = [s for s in splits if s]  # Remove strings vazias
+            splits = [s for s in splits if s]
 
-            # Agrupa o texto e o separador
+            # Reagrupa o separador com o texto anterior (ex: "Olá" + "." -> "Olá.")
             merged_splits = []
-            temp_split = ""
             for i in range(0, len(splits), 2):
                 part = splits[i]
                 sep = splits[i + 1] if i + 1 < len(splits) else ""
@@ -63,23 +65,15 @@ class Chunker:
 
         current_chunk = ""
         for s in splits:
-            # Se um único split já é maior que o chunk_size,
-            # chama a função recursivamente com os próximos separadores.
             if len(s) > self.chunk_size:
                 if remaining_separators:
-                    # A aplicação recursiva acontece aqui
                     final_chunks.extend(self._split_text_with_separators(s, remaining_separators))
                 else:
-                    # Se não há mais separadores, adicionamos o split "grande" mesmo assim.
                     final_chunks.append(s)
 
-            # Se o split atual, somado ao chunk corrente, exceder o tamanho,
-            # finalizamos o chunk corrente.
             elif len(current_chunk + s) > self.chunk_size:
                 final_chunks.append(current_chunk)
                 current_chunk = s
-
-            # Senão, continuamos a construir o chunk corrente.
             else:
                 current_chunk += s
 
@@ -90,35 +84,27 @@ class Chunker:
 
     def chunk_text(self, text: str) -> List[str]:
         """
-        Método principal para dividir o texto em chunks com sobreposição.
+        Processa o texto completo e retorna a lista final de chunks com sobreposição (overlap).
 
-        Parâmetros:
-        - text (str): O texto de entrada a ser dividido.
+        Args:
+            text (str): O texto bruto extraído do documento.
 
-        Retorna:
-        - List[str]: Uma lista de chunks de texto.
+        Returns:
+            List[str]: Lista de strings limpas e dimensionadas, prontas para embedding.
         """
-        # 1. Primeiro, fazemos uma divisão inicial recursiva para que nenhum
-        #    elemento da lista seja maior que o chunk_size.
         initial_splits = self._split_text_with_separators(text, self.separators)
 
-        # 2. Agora, agrupamos esses splits menores em chunks do tamanho desejado,
-        #    respeitando a sobreposição.
         final_chunks = []
         buffer = ""
 
         for chunk in initial_splits:
-            # Se o buffer + o novo chunk for menor que o tamanho alvo, apenas adiciona
             if len(buffer) + len(chunk) <= self.chunk_size:
                 buffer += chunk
             else:
-                # Se exceder, finaliza o chunk atual
-                # .strip() evita salvar chunks cheios de espaços vazios nas pontas
+                # Aplica .strip() antes de salvar para evitar chunks que começam/terminam com espaços inúteis
                 if buffer.strip():
                     final_chunks.append(buffer.strip())
 
-                # O novo buffer começa com a sobreposição do chunk anterior
-                # e o chunk atual.
                 overlap_start = max(0, len(buffer) - self.chunk_overlap)
                 buffer = buffer[overlap_start:] + chunk
 

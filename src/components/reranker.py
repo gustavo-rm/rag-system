@@ -6,69 +6,71 @@ from typing import List, Dict, Any
 
 class ReRanker:
     """
-    Classe para reclassificação de documentos (Reranking).
-    Melhorias: Suporte a GPU, Modelos Multilíngues e Filtragem por Score.
+    Responsável pelo refinamento da busca (Estágio 2).
+
+    Utiliza um modelo Cross-Encoder (que lê a pergunta e o documento simultaneamente)
+    para atribuir uma pontuação de relevância mais precisa do que a busca vetorial simples.
     """
 
     def __init__(self, model_name: str = 'BAAI/bge-reranker-base', device: str = None):
         """
-        Inicializa o ReRanker.
+        Inicializa o modelo de Re-ranking.
 
-        Recomendação de modelos:
-        - 'BAAI/bge-reranker-base': Ótimo balanço entre performance e velocidade (Multilíngue).
-        - 'BAAI/bge-reranker-large': Melhor precisão, mas mais pesado.
-        - 'cross-encoder/ms-marco-MiniLM-L-6-v2': Apenas se o conteúdo for 100% inglês e velocidade for crítica.
+        Args:
+            model_name (str): Nome do modelo no Hugging Face. 'BAAI/bge-reranker-base' é recomendado para Multilíngue.
+            device (str, optional): 'cuda' ou 'cpu'. Se None, detecta automaticamente.
         """
-        # Detecção automática de device se não for especificado
         if not device:
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
         else:
             self.device = device
 
-        print(f"🔄 Inicializando ReRanker com modelo: {model_name} no dispositivo: {self.device}...")
+        print(f"🔄 Inicializando ReRanker ({model_name}) em: {self.device}...")
         self.model = CrossEncoder(model_name, device=self.device)
-        print("✅ ReRanker pronto.")
 
     def rerank(self, query: str, documents: List[Dict[str, Any]], top_n: int = 3, threshold: float = 0.1) -> List[
         Dict[str, Any]]:
         """
-        Reclassifica e filtra documentos.
+        Reclassifica uma lista de documentos candidatos e filtra os irrelevantes.
 
-        Parâmetros:
-        - threshold (float): Pontuação mínima (0 a 1) para considerar um documento relevante. 
-                             Ajuda a evitar alucinações removendo "lixo".
+        Args:
+            query (str): A pergunta do usuário.
+            documents (List[Dict]): Documentos recuperados pelo Retriever. Devem conter ['metadata']['text'].
+            top_n (int): Número máximo de documentos a retornar.
+            threshold (float): Nota de corte (0 a 1). Documentos com relevância abaixo disso são descartados
+                               para evitar alucinações baseadas em contexto ruim.
+
+        Returns:
+            List[Dict]: Lista ordenada dos melhores documentos com scores normalizados.
         """
         if not documents:
             return []
 
-        # Validação simples para evitar erros de chave
+        # Validação de formato
         valid_docs = [doc for doc in documents if 'metadata' in doc and 'text' in doc['metadata']]
         if not valid_docs:
-            print("⚠️ Aviso: Nenhum documento com o formato correto ('metadata' -> 'text') encontrado.")
             return []
 
-        # Cria pares
+        # Prepara pares [Pergunta, Documento] para o modelo
         pairs = [[query, doc['metadata']['text']] for doc in valid_docs]
 
-        # Predição (retorna logits)
+        # Predição (retorna logits não normalizados)
         scores = self.model.predict(pairs, show_progress_bar=False)
 
-        # Se scores for um escalar (apenas 1 doc), converte para array
+        # Garante formato de array numpy
         if not isinstance(scores, (list, np.ndarray)):
             scores = [scores]
 
-        # Normalização Sigmoide (Transforma logits em 0-1 para facilitar leitura)
-        # BGE reranker retorna logits, então a sigmoide ajuda a entender a confiança.
+        # Normalização Sigmoide (converte logits -10 a +10 para probabilidade 0 a 1)
         scores_sig = 1 / (1 + np.exp(-np.array(scores)))
 
         results = []
         for doc, score in zip(valid_docs, scores_sig):
-            # Apenas adiciona se passar no corte de qualidade (threshold)
             if score >= threshold:
-                doc['relevance_score'] = float(score)  # Garante que é float python nativo
+                doc['relevance_score'] = float(score)
                 results.append(doc)
 
-        # Ordena
+        # Ordena do maior score para o menor
         reranked_docs = sorted(results, key=lambda x: x['relevance_score'], reverse=True)
 
         return reranked_docs[:top_n]
