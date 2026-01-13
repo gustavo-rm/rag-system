@@ -1,6 +1,8 @@
 import os
 from dotenv import load_dotenv
 
+from src.preprocessing.query_corrector import QueryCorrector
+
 # --- Carregamento das Variáveis de Ambiente ---
 # Carrega chaves de API e outras configurações do arquivo .env
 load_dotenv()
@@ -68,6 +70,8 @@ def main():
     exact_cache = CacheManager()
     semantic_cache = SemanticCache(dimension=embedding_dimension, similarity_threshold=0.92)
 
+    # Instancia o componente de pré-processamento
+    query_corrector = QueryCorrector(language='pt')
 
     print("\n--- 2. MONTAGEM DOS SISTEMAS ---")
 
@@ -87,7 +91,8 @@ def main():
         rag_system=rag_system,
         cache_manager=exact_cache,
         semantic_cache=semantic_cache,
-        transformers=available_transformers
+        transformers=available_transformers,
+        query_corrector=query_corrector
     )
 
 

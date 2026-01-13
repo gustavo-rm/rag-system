@@ -12,6 +12,7 @@ torch           # Framework principal de deep learning.
 accelerate      # Ajuda a carregar modelos grandes de forma eficiente no Transformers
 bitsandbytes    # Ajuda a carregar modelos em 8-bit ou 4-bit, economizando VRAM
 faiss-cpu
+language_tool_python  # Correção ortográfica em Python
 
 # --- Vector Stores (Escolha um ou ambos) ---
 # Para armazenar e buscar os vetores de embedding

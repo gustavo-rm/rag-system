@@ -7,6 +7,7 @@ from src.caching.semantic_cache import SemanticCache
 from ..routing.query_router import QueryRouter
 from ..query_transformers import QueryTransformer
 from src.pipeline import RAGSystem
+from ..preprocessing.query_corrector import QueryCorrector
 import numpy as np
 
 class Chatbot:
@@ -15,7 +16,7 @@ class Chatbot:
     sua base de conhecimento.
     """
 
-    def __init__(self, llm: LLM, rag_system: RAGSystem, cache_manager: CacheManager, semantic_cache: SemanticCache, transformers: Dict[str, QueryTransformer]):
+    def __init__(self, llm: LLM, rag_system: RAGSystem, cache_manager: CacheManager, semantic_cache: SemanticCache, transformers: Dict[str, QueryTransformer],  query_corrector: QueryCorrector):
         self.llm = llm
         self.rag_system = rag_system
         self.history = ChatHistory()
@@ -24,6 +25,7 @@ class Chatbot:
         # O chatbot usa um roteador e um dicionário de transformadores
         self.router = QueryRouter(llm)
         self.transformers = transformers
+        self.query_corrector = query_corrector
 
         self.condense_system_prompt = """Dada uma conversa e uma pergunta de acompanhamento, reescreva a pergunta de acompanhamento para ser uma pergunta autônoma, em sua língua original. Se a pergunta já for autônoma, apenas a retorne."""
         self.condense_prompt_template = """
@@ -68,46 +70,70 @@ class Chatbot:
 
     def chat(self, user_input: str) -> str:
         """
-        Processa uma interação, agora com o funil de cache de duas camadas.
+        Processa uma interação, com correção ortográfica e fluxo de dados consistente.
         """
+        # --- PASSO 0: CORREÇÃO ORTOGRÁFICA DA ENTRADA ---
+        corrected_input = self.query_corrector.correct(user_input)
+        if corrected_input.lower() != user_input.lower():
+            print(f"INFO: Pergunta corrigida de '{user_input}' para '{corrected_input}'")
+        else:
+            corrected_input = user_input  # Mantém o original se não houver mudança de palavras
+
         # --- CAMADA 1: VERIFICAÇÃO DO CACHE EXATO ---
-        cached_response = self.cache_manager.get(user_input)
+        cached_response = self.cache_manager.get(corrected_input)
         if cached_response:
             print("INFO: Cache HIT! (Camada 1 - Exato)")
-            self.history.add_message(role="user", content=user_input)
+            self.history.add_message(role="user", content=corrected_input)  # Armazena a versão corrigida
             self.history.add_message(role="assistant", content=cached_response)
             return cached_response
 
         # --- CAMADA 2: VERIFICAÇÃO DO CACHE SEMÂNTICO ---
-        query_embedding = self.rag_system.embedder.generate_embeddings([user_input])[0]
+        query_embedding = self.rag_system.embedder.generate_embeddings([corrected_input])[0]
         query_embedding_np = np.array([query_embedding], dtype='float32')
 
         cached_response = self.semantic_cache.check(query_embedding_np)
         if cached_response:
             print("INFO: Cache HIT! (Camada 2 - Semântico)")
-            # Adiciona ao histórico
-            self.history.add_message(role="user", content=user_input)
+            self.history.add_message(role="user", content=corrected_input)  # Armazena a versão corrigida
             self.history.add_message(role="assistant", content=cached_response)
-            # **Importante**: Popula o cache de Camada 1 para futuras buscas mais rápidas
-            self.cache_manager.set(user_input, cached_response)
+            self.cache_manager.set(corrected_input, cached_response)
             return cached_response
 
         # --- CACHE MISS (AMBAS AS CAMADAS) ---
         print("INFO: Cache MISS. Executando o pipeline RAG completo.")
 
-        self.history.add_message(role="user", content=user_input)
+        # Adiciona a pergunta CORRIGIDA ao histórico ANTES da condensação
+        self.history.add_message(role="user", content=corrected_input)
 
-        standalone_question = self._condense_question(user_input)
+        # Usa a pergunta CORRIGIDA para a condensação
+        standalone_question = self._condense_question(corrected_input)
+
+        # --- LÓGICA DE ROTEAMENTO DINÂMICO ---
+        # 1. O Roteador analisa a pergunta autônoma e escolhe a melhor ferramenta.
+        chosen_transformer_name = self.router.select_transformer(standalone_question)
+
+        # 2. Buscamos a instância da ferramenta escolhida no nosso dicionário.
+        chosen_transformer = self.transformers.get(chosen_transformer_name)
+
+        # 3. Configuramos o RAGSystem para usar a ferramenta escolhida NESTA chamada.
+        if chosen_transformer:
+            self.rag_system.query_transformer = chosen_transformer
+        else:
+            # Fallback para o caso de o roteador retornar um nome inválido
+            self.rag_system.query_transformer = self.transformers["NoOpTransformer"]
+
+        # 4. O RAGSystem usará a estratégia recém-configurada.
         rag_response = self.rag_system.ask(standalone_question)
         answer = rag_response['answer']
 
         # --- ATUALIZAÇÃO DOS CACHES ---
         if answer and "não foi encontrada" not in answer:
             print("INFO: Adicionando nova resposta aos caches (Camada 1 e 2).")
-            # Adiciona a nova resposta a ambos os caches
-            self.cache_manager.set(user_input, answer)
+            # Adiciona ao cache usando a pergunta corrigida como chave
+            self.cache_manager.set(corrected_input, answer)
             self.semantic_cache.add(query_embedding_np, answer)
 
+        # Adiciona a resposta do assistente ao histórico
         self.history.add_message(role="assistant", content=answer)
 
         return answer
