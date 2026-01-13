@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
 
+from src.components.hybrid_retriever import HybridRetriever
 from src.preprocessing.query_corrector import QueryCorrector
 
 # --- Carregamento das Variáveis de Ambiente ---
@@ -41,7 +42,10 @@ def main():
         'path': 'data/chromaDB/',
         'collection_name': 'rag_project'
     }
-    vector_store = get_vector_store(config_store)
+    base_vector_store = get_vector_store(config_store)
+
+    # Cria o HybridRetriever envolvendo o store
+    hybrid_retriever = HybridRetriever(base_vector_store)
 
     # --- Configuração dos Componentes de Ingestão e IA ---
     chunker = Chunker(chunk_size=512, chunk_overlap=50)
@@ -79,7 +83,7 @@ def main():
     rag_system = RAGSystem(
         chunker=chunker,
         embedder=embedder,
-        vector_store=vector_store,
+        retriever=hybrid_retriever,
         reranker=reranker,
         llm=llm,
         query_transformer=available_transformers["NoOpTransformer"]

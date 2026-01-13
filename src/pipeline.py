@@ -1,4 +1,4 @@
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 from src.ingestion.chunker import Chunker
 from src.components.embedder import Embedder
@@ -6,18 +6,22 @@ from src.components.llm import LLM
 from src.ingestion.pdf_processor import PDFProcessor
 from .query_transformers import QueryTransformer
 from src.components.reranker import ReRanker
-from .stores.base import VectorStore
+from src.components.hybrid_retriever import HybridRetriever
 
 
 class RAGSystem:
-    def __init__(self, chunker: Chunker, embedder: Embedder, vector_store: VectorStore, reranker: ReRanker,
+    def __init__(self, chunker: Chunker, embedder: Embedder, retriever: HybridRetriever, reranker: ReRanker,
                  llm: LLM, query_transformer: QueryTransformer):
         """
         Inicializa o sistema RAG com todos os seus componentes.
+
+        Args:
+            retriever (HybridRetriever): O orquestrador de busca (BM25 + VectorStore).
+                                         Substitui a antiga injeção direta de 'vector_store'.
         """
         self.chunker = chunker
         self.embedder = embedder
-        self.vector_store = vector_store
+        self.retriever = retriever
         self.reranker = reranker
         self.llm = llm
         self.query_transformer = query_transformer
@@ -30,45 +34,67 @@ class RAGSystem:
                             4. Não adicione nenhuma informação externa ou conhecimento prévio."""
 
     def setup_pipeline(self, pdf_path: str):
-        # (Este método permanece o mesmo, sem alterações)
         print(f"--- Iniciando pipeline de ingestão para: {pdf_path} ---")
         processor = PDFProcessor(pdf_path)
         text = processor.extract_text()
         print(f"Texto extraído e limpo. Total de caracteres: {len(text)}")
+
         chunks = self.chunker.chunk_text(text)
         print(f"Texto dividido em {len(chunks)} chunks.")
+
         embeddings = self.embedder.generate_embeddings(chunks)
         print(f"Embeddings gerados para todos os chunks.")
-        self.vector_store.store_embeddings(chunks, embeddings)
+
+        # Usamos o HybridRetriever para adicionar documentos.
+        # Isso garante que ele salve no Banco Vetorial E atualize o índice BM25 em memória.
+        self.retriever.add_documents(chunks, embeddings)
+
         print("--- Pipeline de ingestão concluído com sucesso! ---")
 
     def ask(self, question: str, retrieval_top_k: int = 20, rerank_top_n: int = 3) -> Dict[str, Any]:
         """
-        Executa o pipeline de consulta com transformação de consulta e re-ranking.
+        Executa o pipeline de consulta com transformação de consulta, busca híbrida e re-ranking.
         """
         print(f"\n--- Nova Pergunta: {question} ---")
 
-        # 1. Etapa de Transformação de Consulta
+        # 1. Etapa de Transformação de Consulta (Multi-Query / HyDE)
         transformed_queries = self.query_transformer.transform(question)
 
-        # 2. Gerar embeddings para a(s) consulta(s) transformada(s)
+        # 2. Gerar embeddings para as consultas transformadas
         query_embeddings = self.embedder.generate_embeddings(transformed_queries)
 
-        # 3. Etapa de Recuperação: Buscar com todos os embeddings e unir os resultados
-        print(f"Recuperando os {retrieval_top_k} documentos candidatos...")
+        # 3. Etapa de Recuperação Híbrida
+        print(f"Recuperando candidatos (Híbrido) para {len(transformed_queries)} variações de query...")
         all_candidate_docs = []
-        for embedding in query_embeddings:
-            all_candidate_docs.extend(self.vector_store.search(embedding, top_k=retrieval_top_k))
+
+        # Precisamos do TEXTO (para BM25) e do VETOR (para Embeddings)
+        for query_text, query_vec in zip(transformed_queries, query_embeddings):
+            results = self.retriever.search(
+                query_text=query_text,  # Vai para o BM25
+                query_embedding=query_vec,  # Vai para o Chroma/Pinecone
+                top_k=retrieval_top_k
+            )
+            all_candidate_docs.extend(results)
 
         # DEBUG
         print(f"INFO: Total de documentos brutos recuperados (antes da desduplicação): {len(all_candidate_docs)}")
 
         # Desduplicar os resultados, mantendo o de maior score se houver sobreposição
-        unique_docs_dict = {doc['id']: doc for doc in
-                            sorted(all_candidate_docs, key=lambda x: x.get('score', 0), reverse=True)}
+        # Nota: O score do BM25 e do Vetor tem escalas diferentes, mas o ReRanker resolve isso.
+        unique_docs_dict = {}
+        for doc in all_candidate_docs:
+            doc_id = doc['id']
+            # Se o documento ainda não foi adicionado ou se o novo tem score maior (ex: match exato de vetor)
+            if doc_id not in unique_docs_dict:
+                unique_docs_dict[doc_id] = doc
+            else:
+                # Lógica: manter o que tiver maior score para priorizar
+                if doc.get('score', 0) > unique_docs_dict[doc_id].get('score', 0):
+                    unique_docs_dict[doc_id] = doc
+
         candidate_docs = list(unique_docs_dict.values())
 
-        # 4. Etapa de Re-ranking: Usar o Cross-Encoder para reclassificar
+        # 4. Etapa de Re-ranking: O Cross-Encoder decide quem realmente é relevante
         print(f"Reclassificando {len(candidate_docs)} documentos para encontrar os {rerank_top_n} melhores...")
         reranked_docs = self.reranker.rerank(question, candidate_docs, top_n=rerank_top_n)
 
@@ -85,6 +111,7 @@ class RAGSystem:
         Com base estritamente no contexto acima, responda à seguinte pergunta:
         Pergunta: {question}
         """
+
         # 6. Gerar a resposta com o LLM
         answer = self.llm.generate_response(
             prompt=user_prompt,

@@ -29,3 +29,4 @@ rouge-score     # Para a métrica ROUGE
 # --- Utilities ---
 # Para funcionalidades auxiliares como gerenciamento de chaves de API
 python-dotenv   # Para carregar variáveis de ambiente de um arquivo .env
+rank-bm25
