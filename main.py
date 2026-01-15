@@ -1,14 +1,10 @@
 import os
 import logging
 from dotenv import load_dotenv
+from src.utils.logger import setup_logging
 
 # --- Configuração de Logging ---
-# Define o formato do log para mostrar hora, nível (INFO/ERROR) e mensagem
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%H:%M:%S'
-)
+setup_logging()
 logger = logging.getLogger(__name__)
 
 # --- Carregamento de Variáveis ---
