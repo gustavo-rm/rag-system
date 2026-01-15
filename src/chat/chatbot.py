@@ -73,7 +73,7 @@ class Chatbot:
         Processa uma interação, com correção ortográfica e fluxo de dados consistente.
         """
         # --- PASSO 0: CORREÇÃO ORTOGRÁFICA DA ENTRADA ---
-        corrected_input = self.query_corrector.correct(user_input)
+        corrected_input = self.query_corrector.correct_query(user_input)
         if corrected_input.lower() != user_input.lower():
             print(f"INFO: Pergunta corrigida de '{user_input}' para '{corrected_input}'")
         else:
