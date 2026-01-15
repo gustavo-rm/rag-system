@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 # --- Importações ---
+
 # Ingestion
 from src.ingestion.chunker import Chunker
 
@@ -56,7 +57,7 @@ def main():
     config_store = {
         'type': 'chroma',
         'path': 'data/chromaDB/',
-        'collection_name': 'rag_project_v2'  # Mudei o nome para garantir versão limpa
+        'collection_name': 'rag_project_v2'
     }
     base_vector_store = get_vector_store(config_store)
 
@@ -66,10 +67,10 @@ def main():
 
     # --- C. Componentes de IA (Embedder, LLM, ReRanker) ---
 
-    # Chunker: Corrigido com Regex seguro
+    # Chunker
     chunker = Chunker(chunk_size=512, chunk_overlap=50)
 
-    # Embedder: Detecção automática de GPU e Batch Size inteligente
+    # Embedder
     embedder = Embedder(
         method='sbert',
         model_name='paraphrase-multilingual-mpnet-base-v2'
@@ -80,7 +81,7 @@ def main():
     reranker = ReRanker(model_name='BAAI/bge-reranker-base')
 
     # LLM: Configurado com controle de Context Window e No-Grad
-    # Se usar OpenAI, lembre-se de configurar a key no .env
+    # Se usar OpenAI, lembrar de configurar a key no .env
     llm = LLM(
         method='local',
         model_name='microsoft/Phi-3-mini-4k-instruct',
@@ -114,7 +115,7 @@ def main():
 
     exact_cache = CacheManager()
     semantic_cache = SemanticCache(dimension=embedding_dim, similarity_threshold=0.92)
-    query_corrector = QueryCorrector(language='pt')
+    query_corrector = QueryCorrector(language='pt', enable_grammar=True)
 
     # ==========================================
     # 4. MONTAGEM DO SISTEMA (RAG + CHATBOT)
@@ -122,19 +123,14 @@ def main():
 
     logger.info("Montando Pipeline RAG...")
 
-    # ATENÇÃO: O RAGSystem agora recebe 'router' em vez de 'query_transformer' fixo
     rag_system = RAGSystem(
         chunker=chunker,
         embedder=embedder,
         retriever=hybrid_retriever,
         reranker=reranker,
         llm=llm,
-        query_transformer=None,  # Depreciado (remova se atualizou a classe RAGSystem)
-        # router=query_router   # Descomente se atualizou a classe RAGSystem para aceitar router
+        router=query_router
     )
-    # *Nota*: Se você ainda não atualizou a classe RAGSystem para usar o Router internamente,
-    # você pode passar o Router para o Chatbot, ou injetar 'query_router' como um atributo manual aqui:
-    rag_system.router = query_router
 
     chatbot = Chatbot(
         llm=llm,
@@ -142,7 +138,6 @@ def main():
         cache_manager=exact_cache,
         semantic_cache=semantic_cache,
         query_corrector=query_corrector
-        # transformers=... (Não precisa mais passar transformers soltos, o Router cuida disso)
     )
 
     # ==========================================
