@@ -44,7 +44,7 @@ class Chatbot:
         self.query_corrector = query_corrector
 
         # Histórico em memória (poderia ser persistido em Redis/DB)
-        self.history = ChatHistory()
+        self.history = ChatHistory(max_history_len=6)
 
         # Prompts para Contextualização (Condense Question)
         self.condense_system_prompt = (
