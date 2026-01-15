@@ -1,131 +1,212 @@
 import os
+import logging
 from dotenv import load_dotenv
 
-from src.components.hybrid_retriever import HybridRetriever
-from src.preprocessing.query_corrector import QueryCorrector
+# --- Configuração de Logging ---
+# Define o formato do log para mostrar hora, nível (INFO/ERROR) e mensagem
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
-# --- Carregamento das Variáveis de Ambiente ---
-# Carrega chaves de API e outras configurações do arquivo .env
+# --- Carregamento de Variáveis ---
 load_dotenv()
 
-# --- Importação dos Componentes da Arquitetura ---
-# Ingestion Pipeline
+# --- Importações ---
+# Ingestion
 from src.ingestion.chunker import Chunker
 
 # Core AI Components
 from src.components.embedder import Embedder
 from src.components.reranker import ReRanker
-from src.components.llm import LLM
-from src.caching.cache_manager import CacheManager
-from src.caching.semantic_cache import SemanticCache
+from src.components.llm import LLM, LLMGenerationError
+from src.components.hybrid_retriever import HybridRetriever
+from src.routing.query_router import QueryRouter
 
-# Storage Backend
-from src.stores import get_vector_store
-
-# Query Transformation Strategies
+# Query Transformers
 from src.query_transformers import NoOpTransformer, MultiQueryTransformer, HyDETransformer
 
-# Main Application Logic
+# Caching & Preprocessing
+from src.caching.cache_manager import CacheManager
+from src.caching.semantic_cache import SemanticCache
+from src.preprocessing.query_corrector import QueryCorrector
+
+# Storage
+from src.stores import get_vector_store
+
+# Application Logic
 from src.pipeline import RAGSystem
 from src.chat.chatbot import Chatbot
 
+
 def main():
     """
-    Função principal que configura e executa o Chatbot RAG.
+    Função principal de orquestração do RAG.
     """
-    print("--- 1. CONFIGURAÇÃO DOS COMPONENTES ---")
+    logger.info("🚀 Inicializando sistema RAG...")
 
-    # --- Configuração do Armazenamento Vetorial (Vector Store) ---
-    # Escolha entre 'chroma' (local) ou 'pinecone' (nuvem)
+    # ==========================================
+    # 1. CONFIGURAÇÃO DOS COMPONENTES BASE
+    # ==========================================
+
+    # --- A. Vector Store (Banco de Dados) ---
+    logger.info("Configurando Vector Store...")
     config_store = {
         'type': 'chroma',
         'path': 'data/chromaDB/',
-        'collection_name': 'rag_project'
+        'collection_name': 'rag_project_v2'  # Mudei o nome para garantir versão limpa
     }
     base_vector_store = get_vector_store(config_store)
 
-    # Cria o HybridRetriever envolvendo o store
+    # --- B. Retriever (Híbrido) ---
+    # Envolve o banco vetorial para adicionar capacidade de busca por palavra-chave (BM25)
     hybrid_retriever = HybridRetriever(base_vector_store)
 
-    # --- Configuração dos Componentes de Ingestão e IA ---
+    # --- C. Componentes de IA (Embedder, LLM, ReRanker) ---
+
+    # Chunker: Corrigido com Regex seguro
     chunker = Chunker(chunk_size=512, chunk_overlap=50)
 
-    # Use um modelo genérico ou o seu modelo treinado
-    # finetuned_model_path = './models/finetuned-embedder'
-    embedder = Embedder(method='sbert', model_name='paraphrase-multilingual-mpnet-base-v2')
-    # embedder = Embedder(method='sbert', model_name=finetuned_model_path) # Para usar o modelo treinado
+    # Embedder: Detecção automática de GPU e Batch Size inteligente
+    embedder = Embedder(
+        method='sbert',
+        model_name='paraphrase-multilingual-mpnet-base-v2'
+        # batch_size=None (será definido automaticamente: 32 para GPU, 8 para CPU)
+    )
 
-    reranker = ReRanker(model_name='cross-encoder/ms-marco-MiniLM-L-6-v2')
-    llm = LLM(method='local', model_name='microsoft/Phi-3-mini-4k-instruct')
+    # ReRanker: Atualizado para modelo BAAI (Melhor suporte a Multilíngue/PT-BR)
+    reranker = ReRanker(model_name='BAAI/bge-reranker-base')
 
-    # Para usar OpenAI, descomente a linha abaixo e configure a API_KEY no .env
-    # llm = LLM(method='openai', model_name='gpt-4o-mini', api_key=os.getenv("OPENAI_API_KEY"))
+    # LLM: Configurado com controle de Context Window e No-Grad
+    # Se usar OpenAI, lembre-se de configurar a key no .env
+    llm = LLM(
+        method='local',
+        model_name='microsoft/Phi-3-mini-4k-instruct',
+        context_window=4096  # Limite do Phi-3
+    )
 
-    # --- Configuração das Estratégias de Otimização ---
-    # --- Criar um dicionário com todas as estratégias de transformação disponíveis ---
-    available_transformers = {
-        "NoOpTransformer": NoOpTransformer(),
-        "HyDETransformer": HyDETransformer(llm=llm),
-        "MultiQueryTransformer": MultiQueryTransformer(llm=llm, num_queries=3)
+    # ==========================================
+    # 2. ESTRATÉGIAS DE ROTEAMENTO (ROUTER)
+    # ==========================================
+    logger.info("Configurando estratégias de Query Routing...")
+
+    # Instancia as estratégias injetando o LLM onde necessário
+    transformers_map = {
+        "noop": NoOpTransformer(),
+        "hyde": HyDETransformer(llm),
+        "multi_query": MultiQueryTransformer(llm, num_queries=3)
     }
 
-    # Configuração do Cache de Duas Camadas
-    embedding_dimension = embedder.model.get_sentence_embedding_dimension()
-    exact_cache = CacheManager()
-    semantic_cache = SemanticCache(dimension=embedding_dimension, similarity_threshold=0.92)
+    # O Router recebe o mapa e decidirá qual usar em tempo de execução
+    query_router = QueryRouter(llm, strategies=transformers_map)
 
-    # Instancia o componente de pré-processamento
+    # ==========================================
+    # 3. CACHE E PRÉ-PROCESSAMENTO
+    # ==========================================
+
+    # Pega dimensão dinamicamente do modelo carregado (ex: 768 para mpnet)
+    # Acessamos o atributo interno do SentenceTransformer se for método sbert
+    embedding_dim = 768  # Valor padrão seguro para mpnet-base
+    if hasattr(embedder, 'model') and hasattr(embedder.model, 'get_sentence_embedding_dimension'):
+        embedding_dim = embedder.model.get_sentence_embedding_dimension()
+
+    exact_cache = CacheManager()
+    semantic_cache = SemanticCache(dimension=embedding_dim, similarity_threshold=0.92)
     query_corrector = QueryCorrector(language='pt')
 
-    print("\n--- 2. MONTAGEM DOS SISTEMAS ---")
+    # ==========================================
+    # 4. MONTAGEM DO SISTEMA (RAG + CHATBOT)
+    # ==========================================
 
-    # O RAGSystem é a base de conhecimento que responde a perguntas autônomas
+    logger.info("Montando Pipeline RAG...")
+
+    # ATENÇÃO: O RAGSystem agora recebe 'router' em vez de 'query_transformer' fixo
     rag_system = RAGSystem(
         chunker=chunker,
         embedder=embedder,
         retriever=hybrid_retriever,
         reranker=reranker,
         llm=llm,
-        query_transformer=available_transformers["NoOpTransformer"]
+        query_transformer=None,  # Depreciado (remova se atualizou a classe RAGSystem)
+        # router=query_router   # Descomente se atualizou a classe RAGSystem para aceitar router
     )
+    # *Nota*: Se você ainda não atualizou a classe RAGSystem para usar o Router internamente,
+    # você pode passar o Router para o Chatbot, ou injetar 'query_router' como um atributo manual aqui:
+    rag_system.router = query_router
 
-    # O Chatbot é a camada de conversação que gerencia o histórico e o cache
     chatbot = Chatbot(
         llm=llm,
         rag_system=rag_system,
         cache_manager=exact_cache,
         semantic_cache=semantic_cache,
-        transformers=available_transformers,
         query_corrector=query_corrector
+        # transformers=... (Não precisa mais passar transformers soltos, o Router cuida disso)
     )
 
-
-    print("\n--- 3. PIPELINE DE INGESTÃO DE DADOS ---")
+    # ==========================================
+    # 5. INGESTÃO DE DADOS (Execução Única)
+    # ==========================================
 
     pdf_path = "data/pdfs/relevo-brasileiro.pdf"
+
+    # Verifica se o arquivo existe
     if os.path.exists(pdf_path):
-        # A linha abaixo deve ser executada apenas uma vez por documento
-        # para processar e armazenar seus embeddings.
-        # Após a primeira execução, comente-a para não reprocessar desnecessariamente.
-        # rag_system.setup_pipeline(pdf_path)
-        print(f"Sistema pronto para consultar o documento: {pdf_path}")
-        pass # Comente esta linha e descomente a de cima para a ingestão
+        # Lógica simples para evitar re-ingestão a cada boot
+        # Em produção, você verificaria se o arquivo já está no banco pelo hash ou nome
+        ingestion_done_marker = f"{pdf_path}.done"
+
+        if not os.path.exists(ingestion_done_marker):
+            logger.info(f"Iniciando ingestão do documento: {pdf_path}")
+            try:
+                rag_system.setup_pipeline(pdf_path)
+                # Cria um arquivo vazio para marcar que já foi feito
+                with open(ingestion_done_marker, 'w') as f:
+                    f.write('done')
+                logger.info("Ingestão concluída e marcada.")
+            except Exception as e:
+                logger.error(f"Falha na ingestão: {e}")
+        else:
+            logger.info("Documento já processado anteriormente. Pulando ingestão.")
     else:
-        print(f"AVISO: Arquivo PDF não encontrado em '{pdf_path}'. O sistema só responderá com o conhecimento geral do LLM.")
+        logger.warning(f"PDF não encontrado em '{pdf_path}'. O sistema funcionará apenas com conhecimento prévio.")
 
+    # ==========================================
+    # 6. LOOP DE INTERAÇÃO (CHAT)
+    # ==========================================
 
-    print("\n--- 4. INICIANDO O CHAT INTERATIVO ---")
-    print("\n\nAssistente de Documentos iniciado! Faça sua pergunta.")
-    print("Digite 'sair' para terminar a conversa.")
+    print("\n" + "=" * 50)
+    print("🤖 Assistente RAG v2.0 Pronto!")
+    print("Comandos: 'sair' para encerrar.")
+    print("=" * 50 + "\n")
 
     while True:
-        user_question = input("\nVocê: ")
-        if user_question.lower() in ['sair', 'exit', 'quit']:
-            print("Assistente: Até logo!")
-            break
+        try:
+            user_question = input("Você: ").strip()
 
-        assistant_response = chatbot.chat(user_question)
-        print(f"Assistente: {assistant_response}")
+            if not user_question:
+                continue
+
+            if user_question.lower() in ['sair', 'exit', 'quit']:
+                logger.info("Encerrando sessão.")
+                print("Assistente: Até logo! 👋")
+                break
+
+            # O Chatbot gerencia todo o fluxo (correção -> cache -> RAG -> Resposta)
+            response = chatbot.chat(user_question)
+
+            print(f"Assistente: {response}\n")
+
+        except KeyboardInterrupt:
+            print("\nOperação cancelada pelo usuário.")
+            break
+        except LLMGenerationError as e:
+            logger.error(f"Erro no LLM: {e}")
+            print("Assistente: Desculpe, tive um problema ao gerar a resposta. Tente simplificar a pergunta.")
+        except Exception as e:
+            logger.critical(f"Erro não tratado: {e}")
+            print("Assistente: Ocorreu um erro interno.")
 
 
 if __name__ == "__main__":
