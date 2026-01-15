@@ -1,73 +1,98 @@
 import faiss
+import logging
 import numpy as np
 from typing import Optional, List
+
+logger = logging.getLogger(__name__)
 
 
 class SemanticCache:
     """
-    Um cache em memória que armazena respostas para perguntas com base na
-    similaridade semântica de seus embeddings.
+    Cache de Similaridade Semântica usando FAISS.
+
+    Armazena vetores de perguntas passadas. Se uma nova pergunta for semanticamente
+    próxima (acima de um limiar), retorna a resposta antiga, economizando chamadas de LLM.
     """
 
-    def __init__(self, dimension: int, similarity_threshold: float = 0.98):
+    def __init__(self, dimension: int, similarity_threshold: float = 0.92):
         """
-        Inicializa o cache semântico.
+        Inicializa o índice vetorial.
 
         Args:
-            dimension (int): A dimensão dos vetores de embedding (ex: 768).
-            similarity_threshold (float): O limiar para considerar duas perguntas
-                                          como "iguais" (um cache hit).
+            dimension (int): Dimensão dos embeddings (ex: 768 para MPNet, 1536 para OpenAI).
+            similarity_threshold (float): Nota de corte (0.0 a 1.0) para considerar similaridade.
+                                          Recomenda-se 0.90+ para evitar respostas erradas.
         """
-        # FAISS usa L2 (distância Euclidiana). Para similaridade de cosseno,
-        # normalizamos os vetores e usamos IndexFlatIP (Produto Interno).
-        self.index = faiss.IndexFlatIP(dimension)
-        self.responses: List[str] = []
+        self.dimension = dimension
         self.threshold = similarity_threshold
-        print(f"Cache Semântico inicializado com dimensão {dimension} e limiar {similarity_threshold}.")
 
-    def _normalize(self, vectors: np.ndarray) -> np.ndarray:
-        """Normaliza os vetores para a busca de similaridade de cosseno."""
-        faiss.normalize_L2(vectors)
-        return vectors
+        # IndexFlatIP = Inner Product (Produto Interno).
+        # Com vetores normalizados, isso equivale à Similaridade de Cosseno.
+        self.index = faiss.IndexFlatIP(dimension)
+
+        # Armazena as respostas textuais alinhadas com os índices do FAISS
+        self.responses: List[str] = []
+
+        logger.info(f"🧠 Cache Semântico (Camada 2) inicializado. Dim: {dimension}, Threshold: {similarity_threshold}")
+
+    def _prepare_vector(self, vector: np.ndarray) -> np.ndarray:
+        """
+        Prepara o vetor para o FAISS: garante float32, formato 2D e normalização.
+
+        IMPORTANTE: Cria uma cópia para não alterar o vetor original in-place.
+        """
+        # Garante que é float32 (FAISS exige isso)
+        vec = vector.astype(np.float32)
+
+        # Garante formato 2D (1, dim)
+        if vec.ndim == 1:
+            vec = np.expand_dims(vec, axis=0)
+
+        # Normalização L2 para usar Cosseno
+        faiss.normalize_L2(vec)
+        return vec
 
     def add(self, question_embedding: np.ndarray, answer: str):
         """
-        Adiciona um novo par (embedding da pergunta, resposta) ao cache.
+        Adiciona uma nova entrada ao cache.
         """
-        # FAISS espera um array 2D
-        if question_embedding.ndim == 1:
-            question_embedding = np.expand_dims(question_embedding, axis=0)
+        # Copia e prepara o vetor
+        normalized_embedding = self._prepare_vector(question_embedding)
 
-        normalized_embedding = self._normalize(question_embedding)
         self.index.add(normalized_embedding)
         self.responses.append(answer)
+        logger.debug("Nova entrada adicionada ao Cache Semântico.")
 
     def check(self, query_embedding: np.ndarray) -> Optional[str]:
         """
-        Verifica se uma pergunta similar já existe no cache.
+        Verifica se existe alguma pergunta similar no histórico.
 
-        Retorna:
-            A resposta em cache se um hit for encontrado, caso contrário None.
+        Args:
+            query_embedding (np.ndarray): O vetor da nova pergunta.
+
+        Returns:
+            Optional[str]: A resposta cacheada se houver similaridade suficiente.
         """
         if self.index.ntotal == 0:
-            return None  # Cache está vazio
+            return None
 
-        if query_embedding.ndim == 1:
-            query_embedding = np.expand_dims(query_embedding, axis=0)
+        normalized_query = self._prepare_vector(query_embedding)
 
-        normalized_query = self._normalize(query_embedding)
+        # Busca o 1 vizinho mais próximo (k=1)
+        # D: Distâncias (Scores), I: Índices
+        D, I = self.index.search(normalized_query, 1)
 
-        # Busca pelo vizinho mais próximo (k=1)
-        distances, indices = self.index.search(normalized_query, 1)
+        top_score = D[0][0]
+        top_index = I[0][0]
 
-        # distances aqui é na verdade a similaridade de cosseno (devido à normalização e IndexFlatIP)
-        top_similarity = distances[0][0]
-        top_index = indices[0][0]
+        logger.debug(f"Cache Semântico: Score encontrado {top_score:.4f} (Limiar: {self.threshold})")
 
-        print(f"DEBUG: Similaridade encontrada no cache: {top_similarity:.4f} | Limiar: {self.threshold}")
-
-        if top_similarity >= self.threshold:
-            print(f"INFO: Cache hit! Similaridade de {top_similarity:.4f} (acima de {self.threshold}).")
-            return self.responses[top_index]
+        if top_score >= self.threshold:
+            logger.info(f"🎯 Cache Semântico HIT! Score: {top_score:.4f}")
+            if 0 <= top_index < len(self.responses):
+                return self.responses[top_index]
+            else:
+                logger.error("Índice do FAISS dessincronizado com lista de respostas.")
+                return None
 
         return None
