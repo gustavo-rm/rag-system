@@ -1,100 +1,170 @@
-import nltk
-from rouge_score import rouge_scorer
-from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
-from typing import List, Dict, Any, Optional
-
-# RAGAs - Ferramenta para avaliação de RAG
-from ragas import evaluate
-from ragas.metrics import (
-    faithfulness,
-    answer_relevancy,
-    context_precision,
-    context_recall,
-)
+import logging
+import os
+import pandas as pd
+from typing import List, Dict, Optional, Any
 from datasets import Dataset
 
-# Baixar o punkt do NLTK se ainda não foi feito
-try:
-    nltk.data.find('tokenizers/punkt')
-except LookupError:  # Usar LookupError
-    print("Baixando o pacote 'punkt' do NLTK...")
-    nltk.download('punkt')
+# Ragas Metrics
+from ragas import evaluate
+from ragas.metrics import (
+    faithfulness,  # O modelo alucinou? (Geração)
+    answer_relevancy,  # Respondeu o que foi perguntado? (Geração)
+    context_precision,  # O Retriever trouxe documentos úteis no topo? (Recuperação)
+    context_recall,  # O Retriever trouxe TODA a informação necessária? (Recuperação)
+)
+# Integração com LangChain (Necessário para o RAGAS funcionar bem)
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+
+# Configuração de Logger
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
-class ComprehensiveEvaluator:
+class RAGEvaluator:
     """
-    Um avaliador que combina métricas clássicas (BLEU, ROUGE)
-    com métricas modernas de avaliação de RAG (via RAGAs).
+    Avaliador Semântico para sistemas RAG (Retrieval-Augmented Generation).
+
+    Usa métricas baseadas em LLM, que avaliam o significado e a veracidade das respostas.
+
+    Esta classe atua como um 'Juiz' independente. Recomenda-se usar um modelo
+    forte (ex: GPT-4o) para a avaliação, independente do modelo usado no RAG.
     """
 
-    def __init__(self):
-        """Inicializa os scorers necessários."""
-        self.rouge_scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
-        # Lista de métricas do RAGAs atualizada
-        self.ragas_metrics = [faithfulness, answer_relevancy, context_precision, context_recall]
-        print("ComprehensiveEvaluator inicializado.")
+    def __init__(self, openai_api_key: Optional[str] = None):
+        """
+        Inicializa o avaliador configurando o LLM 'Juiz'.
 
-    def _compute_classic_metrics(self, generated_answer: str, reference_answer: str) -> Dict[str, float]:
-        """Calcula as métricas clássicas que dependem de uma resposta de referência."""
-        results = {}
+        Args:
+            openai_api_key (str): Chave da OpenAI. Se None, tenta pegar do ambiente.
+                                  O RAGAS funciona melhor com a OpenAI como juiz.
+        """
+        self.api_key = openai_api_key or os.getenv("OPENAI_API_KEY")
+        if not self.api_key:
+            logger.warning(
+                "⚠️ RAGEvaluator: API Key da OpenAI não encontrada. A avaliação pode falhar se não houver configuração global.")
 
-        # --- Cálculo do BLEU ---
-        reference_tokens = [nltk.word_tokenize(reference_answer.lower())]
-        generated_tokens = nltk.word_tokenize(generated_answer.lower())
+        # Configura o LLM e Embeddings especificamente para o RAGAS (Juiz)
+        # Usamos gpt-4o-mini ou gpt-4 para avaliação por serem mais rigorosos
+        self.judge_llm = ChatOpenAI(model="gpt-4o-mini", api_key=self.api_key)
+        self.judge_embeddings = OpenAIEmbeddings(api_key=self.api_key)
 
-        # CORREÇÃO 3: Instanciando a classe primeiro para clareza
-        chencherry = SmoothingFunction()
-        bleu_score = sentence_bleu(
-            reference_tokens,
-            generated_tokens,
-            smoothing_function=chencherry.method1
-        )
-        results['bleu'] = bleu_score
+        # Métricas divididas por caso de uso
+        self.metrics_with_ground_truth = [
+            faithfulness,
+            answer_relevancy,
+            context_precision,
+            context_recall
+        ]
 
-        # --- Cálculo do ROUGE ---
-        rouge_scores = self.rouge_scorer.score(reference_answer, generated_answer)
-        results['rouge1'] = rouge_scores['rouge1'].fmeasure
-        results['rouge2'] = rouge_scores['rouge2'].fmeasure
-        results['rougeL'] = rouge_scores['rougeL'].fmeasure
+        self.metrics_no_ground_truth = [
+            faithfulness,
+            answer_relevancy
+        ]
 
-        return results
+        logger.info("⚖️ RAGEvaluator (v3.1) inicializado com Juiz OpenAI.")
 
-    def _compute_ragas_metrics(self, question: str, generated_answer: str, contexts: List[str],
-                               reference_answer: str) -> Dict[str, float]:
-        """Calcula as métricas do RAGAs que avaliam o processo de recuperação e geração."""
+    def evaluate_single(self,
+                        question: str,
+                        generated_answer: str,
+                        retrieved_contexts: List[str],
+                        ground_truth: Optional[str] = None) -> Dict[str, float]:
+        """
+        Avalia uma única interação do RAG.
+
+        Args:
+            question (str): A pergunta do usuário.
+            generated_answer (str): A resposta final do Chatbot.
+            retrieved_contexts (List[str]): Lista de textos recuperados (contexto).
+            ground_truth (str, optional): A resposta ideal (gabarito).
+
+        Returns:
+            Dict[str, float]: Dicionário com as pontuações (0.0 a 1.0).
+        """
+        # Prepara os dados no formato que o RAGAS espera
         data = {
             "question": [question],
             "answer": [generated_answer],
-            "contexts": [contexts],
-            "ground_truth": [reference_answer]
+            "contexts": [retrieved_contexts],
         }
+
+        metrics_to_use = self.metrics_no_ground_truth
+
+        if ground_truth:
+            data["ground_truth"] = [ground_truth]
+            metrics_to_use = self.metrics_with_ground_truth
+            logger.info("Executando avaliação completa (com Ground Truth)...")
+        else:
+            logger.info("Executando avaliação parcial (sem Ground Truth - Apenas Geração)...")
+
+        try:
+            dataset = Dataset.from_dict(data)
+
+            # Executa a avaliação
+            # Passamos o llm e embeddings explicitamente para garantir que o RAGAS use nossa config
+            results = evaluate(
+                dataset=dataset,
+                metrics=metrics_to_use,
+                llm=self.judge_llm,
+                embeddings=self.judge_embeddings,
+                raise_exceptions=False
+            )
+
+            # Converte para dicionário Python padrão
+            # O objeto results do RAGAS se comporta como dict
+            scores = {k: round(v, 4) for k, v in results.items()}
+
+            logger.info(f"📊 Resultados da Avaliação: {scores}")
+            return scores
+
+        except Exception as e:
+            logger.error(f"❌ Falha ao executar RAGAS: {e}")
+            return {"error": 0.0}
+
+    def evaluate_batch(self, samples: List[Dict[str, Any]]) -> pd.DataFrame:
+        """
+        Avalia um lote de perguntas (Golden Dataset) e retorna um DataFrame.
+
+        Args:
+            samples (List[Dict]): Lista de dicts contendo chaves:
+                                  'question', 'answer', 'contexts', 'ground_truth' (opcional).
+
+        Returns:
+            pd.DataFrame: Tabela com resultados comparativos.
+        """
+        logger.info(f"Iniciando avaliação em lote de {len(samples)} itens...")
+
+        # Transforma lista de dicts em dict de listas (formato columnar do Dataset)
+        data = {
+            "question": [],
+            "answer": [],
+            "contexts": [],
+            "ground_truth": []
+        }
+
+        has_gt = all("ground_truth" in s for s in samples)
+
+        for s in samples:
+            data["question"].append(s["question"])
+            data["answer"].append(s["answer"])
+            data["contexts"].append(s["contexts"])
+            if has_gt:
+                data["ground_truth"].append(s.get("ground_truth", ""))
+
+        if not has_gt:
+            del data["ground_truth"]
+            metrics = self.metrics_no_ground_truth
+        else:
+            metrics = self.metrics_with_ground_truth
+
         dataset = Dataset.from_dict(data)
 
-        score = evaluate(dataset, metrics=self.ragas_metrics)
-        score.pop('dataset', None)  # Remove o objeto do dataset para um resultado mais limpo
-        return score
+        results = evaluate(
+            dataset=dataset,
+            metrics=metrics,
+            llm=self.judge_llm,
+            embeddings=self.judge_embeddings
+        )
 
-    def evaluate(
-            self,
-            question: str,
-            generated_answer: str,
-            retrieved_contexts: List[str],
-            reference_answer: Optional[str] = None
-    ) -> Dict[str, float]:
-        """
-        Executa uma avaliação completa do resultado de uma consulta RAG.
-        """
-        all_results = {}
-
-        if reference_answer:
-            classic_scores = self._compute_classic_metrics(generated_answer, reference_answer)
-            all_results.update(classic_scores)
-
-            ragas_scores = self._compute_ragas_metrics(question, generated_answer, retrieved_contexts, reference_answer)
-            all_results.update(ragas_scores)
-        else:
-            print("Nenhuma resposta de referência fornecida, pulando métricas clássicas e de recall do RAGAs.")
-            # Aqui você poderia rodar RAGAs com métricas que não precisam de `ground_truth`
-            # Ex: evaluate(dataset, metrics=[faithfulness, answer_relevancy, context_precision])
-
-        return all_results
+        df = results.to_pandas()
+        logger.info("Avaliação em lote concluída.")
+        return df
