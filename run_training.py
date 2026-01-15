@@ -1,75 +1,80 @@
 import argparse
-from sentence_transformers import SentenceTransformer, losses
-from torch.utils.data import DataLoader
-# Importa os componentes necessários do nosso código-fonte em 'src'
+import logging
+import os
+
+from src.utils.logger import setup_logging
+
+# --- Configuração de Logging ---
+setup_logging()
+logger = logging.getLogger(__name__)
+
+# Importações dos módulos v3
 from src.components.llm import LLM
 from src.ingestion.pdf_processor import PDFProcessor
 from src.ingestion.chunker import Chunker
 from src.training.generators import FileTripletGenerator, SyntheticTripletGenerator
+from src.training.trainer import EmbeddingTrainer
+
 
 def main():
-    # --- Configuração dos Argumentos da Linha de Comando ---
-    parser = argparse.ArgumentParser(description="Script de fine-tuning para modelos de embedding.")
-    parser.add_argument('--mode', type=str, required=True, choices=['file', 'synthetic'],
-                        help="Modo de geração de dados: 'file' (de um JSON) ou 'synthetic' (com LLM).")
-    parser.add_argument('--input_path', type=str, required=True,
-                        help="Caminho para o arquivo de entrada (data/train/triplets.json para 'file', data/pdfs/relevo-brasileiro.pdf para 'synthetic').")
-    parser.add_argument('--base_model', type=str, default='paraphrase-multilingual-mpnet-base-v2',
-                        help="Nome do modelo base do SentenceTransformer para fine-tuning.")
-    parser.add_argument('--output_path', type=str, default='models/finetuned-embedder',
-                        help="Diretório para salvar o modelo treinado.")
-    parser.add_argument('--epochs', type=int, default=4, help="Número de épocas de treinamento.")
-    parser.add_argument('--batch_size', type=int, default=16, help="Tamanho do lote de treinamento.")
-    parser.add_argument('--num_synthetic_examples', type=int, default=100,
-                        help="Número de tripletos a gerar no modo 'synthetic'.")
+    parser = argparse.ArgumentParser(description="Pipeline de Fine-Tuning de Embeddings (RAG v3)")
+
+    # Parâmetros de Entrada
+    parser.add_argument('--mode', choices=['file', 'synthetic'], required=True,
+                        help="Fonte dos dados: arquivo JSON ou geração sintética via LLM.")
+    parser.add_argument('--input', type=str, required=True,
+                        help="Caminho do PDF (modo synthetic) ou JSON (modo file).")
+
+    # Parâmetros de Treino
+    parser.add_argument('--base_model', type=str, default='paraphrase-multilingual-mpnet-base-v2')
+    parser.add_argument('--output_dir', type=str, default='models/finetuned_v3')
+    parser.add_argument('--epochs', type=int, default=3)
+    parser.add_argument('--batch_size', type=int, default=16)
+    parser.add_argument('--num_gen', type=int, default=50, help="Qtd de exemplos sintéticos a gerar.")
 
     args = parser.parse_args()
 
-    # --- Carregamento e Geração de Dados ---
+    # 1. GERAÇÃO DE DADOS
     train_examples = []
+
     if args.mode == 'file':
-        generator = FileTripletGenerator(file_path=args.input_path)
+        generator = FileTripletGenerator(args.input)
         train_examples = generator.generate()
 
     elif args.mode == 'synthetic':
-        print("Preparando dados para geração sintética...")
-        # 1. Processar o PDF para obter os chunks de texto
-        processor = PDFProcessor(args.input_path)
+        if not os.path.exists(args.input):
+            logger.error(f"PDF não encontrado: {args.input}")
+            return
+
+        logger.info("Preparando Ingestão para geração sintética...")
+
+        # Pipeline de Ingestão v3
+        processor = PDFProcessor(args.input)
         text = processor.extract_text()
-        chunker = Chunker(chunk_size=384, chunk_overlap=50)  # Chunks menores são melhores para gerar perguntas
+
+        # Usamos chunks menores (384) para treino, pois o modelo MPNet tem limite de 384 tokens
+        chunker = Chunker(chunk_size=384, chunk_overlap=0)
         chunks = chunker.chunk_text(text)
 
-        # 2. Carregar o LLM local para gerar as perguntas
-        print("Carregando LLM local para geração de dados...")
-        llm = LLM(method='local')  # Usará o Phi-3 quantizado, rápido e eficiente
+        logger.info(f"Texto quebrado em {len(chunks)} trechos.")
 
-        # 3. Gerar os tripletos
-        generator = SyntheticTripletGenerator(llm=llm, num_examples=args.num_synthetic_examples)
+        # Carrega LLM Local (Phi-3 é ótimo para gerar perguntas rápidas)
+        llm = LLM(method='local', model_name='microsoft/Phi-3-mini-4k-instruct')
+
+        generator = SyntheticTripletGenerator(llm=llm, num_examples=args.num_gen)
         train_examples = generator.generate(chunks=chunks)
 
-    if not train_examples:
-        print("Nenhum dado de treinamento foi gerado. Encerrando.")
-        return
+    # 2. TREINAMENTO
+    if train_examples:
+        trainer = EmbeddingTrainer(
+            base_model_name=args.base_model,
+            batch_size=args.batch_size,
+            epochs=args.epochs
+        )
 
-    # --- Configuração e Execução do Treinamento ---
-    print(f"\nCarregando o modelo base: {args.base_model}")
-    model = SentenceTransformer(args.base_model)
-
-    train_dataloader = DataLoader(train_examples, shuffle=True, batch_size=args.batch_size)
-    train_loss = losses.MultipleNegativesRankingLoss(model)
-
-    warmup_steps = int(len(train_dataloader) * args.epochs * 0.1)
-
-    print(f"Iniciando fine-tuning por {args.epochs} épocas...")
-    model.fit(
-        train_objectives=[(train_dataloader, train_loss)],
-        epochs=args.epochs,
-        warmup_steps=warmup_steps,
-        output_path=args.output_path,
-        show_progress_bar=True
-    )
-
-    print(f"\nTreinamento concluído! Modelo salvo em: {args.output_path}")
+        trainer.train(train_examples, output_path=args.output_dir)
+    else:
+        logger.warning("Nenhum dado gerado. Encerrando.")
 
 
 if __name__ == "__main__":
