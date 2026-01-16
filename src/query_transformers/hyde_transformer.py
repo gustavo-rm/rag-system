@@ -1,6 +1,9 @@
 from typing import List
 from .base import QueryTransformer
 from src.components.llm import LLM
+import logging
+# Configuração de Logger
+logger = logging.getLogger(__name__)
 
 
 class HyDETransformer(QueryTransformer):
@@ -16,7 +19,7 @@ class HyDETransformer(QueryTransformer):
         """
 
     def transform(self, query: str) -> List[str]:
-        print(f"⚡ HyDE: Gerando documento hipotético para: '{query}'")
+        logger.info(f"⚡ HyDE: Gerando documento hipotético para: '{query}'")
 
         hypothetical_doc = self.llm.generate_response(
             prompt=self.prompt_template.format(question=query),

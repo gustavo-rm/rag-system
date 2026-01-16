@@ -2,6 +2,9 @@ import torch
 import numpy as np
 from sentence_transformers.cross_encoder import CrossEncoder
 from typing import List, Dict, Any
+import logging
+# Configuração de Logger
+logger = logging.getLogger(__name__)
 
 
 class ReRanker:
@@ -25,7 +28,7 @@ class ReRanker:
         else:
             self.device = device
 
-        print(f"🔄 Inicializando ReRanker ({model_name}) em: {self.device}...")
+        logger.info(f"🔄 Inicializando ReRanker ({model_name}) em: {self.device}...")
         self.model = CrossEncoder(model_name, device=self.device)
 
     def rerank(self, query: str, documents: List[Dict[str, Any]], top_n: int = 3, threshold: float = 0.1) -> List[

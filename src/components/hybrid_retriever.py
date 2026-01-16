@@ -1,6 +1,9 @@
 from rank_bm25 import BM25Okapi
 from typing import List, Dict, Any
 from src.stores.base import VectorStore
+import logging
+# Configuração de Logger
+logger = logging.getLogger(__name__)
 
 
 class HybridRetriever:
@@ -29,7 +32,7 @@ class HybridRetriever:
     def _try_sync_initial_data(self):
         """Tenta recuperar documentos do VectorStore para reconstruir o índice BM25 na inicialização."""
         if "ChromaStore" in str(type(self.vector_store)):
-            print("🔄 Sincronizando índice BM25 com dados persistidos no ChromaDB...")
+            logger.info("🔄 Sincronizando índice BM25 com dados persistidos no ChromaDB...")
             try:
                 all_data = self.vector_store.collection.get()
                 if all_data and all_data['documents']:
@@ -37,9 +40,9 @@ class HybridRetriever:
                     ids = all_data['ids']
                     self.documents_cache = [{'id': i, 'metadata': {'text': t}} for i, t in zip(ids, texts)]
                     self._rebuild_bm25()
-                    print(f"✅ BM25 reconstruído com sucesso ({len(texts)} docs).")
+                    logger.info(f"✅ BM25 reconstruído com sucesso ({len(texts)} docs).")
             except Exception as e:
-                print(f"⚠️ Aviso: Falha ao sincronizar ChromaDB: {e}")
+                logger.error(f"⚠️ Aviso: Falha ao sincronizar ChromaDB: {e}")
 
     def _rebuild_bm25(self):
         """(Re)cria o índice BM25 usando os documentos atuais do cache."""
@@ -71,7 +74,7 @@ class HybridRetriever:
         new_docs = [{'id': i, 'metadata': {'text': c}} for i, c in zip(ids, chunks)]
         self.documents_cache.extend(new_docs)
         self._rebuild_bm25()
-        print(f"➕ HybridRetriever: {len(chunks)} novos documentos indexados.")
+        logger.info(f"➕ HybridRetriever: {len(chunks)} novos documentos indexados.")
 
     def search(self, query_text: str, query_embedding: List[float], top_k: int = 5) -> List[Dict[str, Any]]:
         """

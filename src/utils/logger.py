@@ -17,9 +17,9 @@ def setup_logging(log_dir: str = "logs", log_filename: str = "app_rag.log"):
         os.makedirs(log_dir)
 
     # Caminho completo do arquivo (ex: logs/app_rag.log)
-    # Dica: Você pode adicionar data no nome se quiser um arquivo novo por execução:
-    # file_path = os.path.join(log_dir, f"{datetime.now().strftime('%Y-%m-%d')}_{log_filename}")
-    file_path = os.path.join(log_dir, log_filename)
+    # Adiciona data no nome para criar um arquivo novo por execução:
+    file_path = os.path.join(log_dir, f"{datetime.now().strftime('%Y-%m-%d')}_{log_filename}")
+    # file_path = os.path.join(log_dir, log_filename)
 
     # 2. Define o formato da mensagem
     # %(asctime)s - Data/Hora

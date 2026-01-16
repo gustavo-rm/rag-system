@@ -1,6 +1,9 @@
 from typing import List
 from .base import QueryTransformer
 from src.components.llm import LLM
+import logging
+# Configuração de Logger
+logger = logging.getLogger(__name__)
 
 
 class MultiQueryTransformer(QueryTransformer):
@@ -17,7 +20,7 @@ class MultiQueryTransformer(QueryTransformer):
         """
 
     def transform(self, query: str) -> List[str]:
-        print(f"⚡ MultiQuery: Gerando {self.num_queries} variações...")
+        logger.info(f"⚡ MultiQuery: Gerando {self.num_queries} variações...")
 
         response = self.llm.generate_response(
             prompt=self.prompt_template.format(num=self.num_queries, question=query),

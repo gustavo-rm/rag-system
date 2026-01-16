@@ -3,8 +3,7 @@ import logging
 from typing import Optional
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 
-# Configuração básica de logging
-logging.basicConfig(level=logging.INFO)
+# Configuração de logging
 logger = logging.getLogger(__name__)
 
 

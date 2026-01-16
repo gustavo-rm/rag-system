@@ -1,6 +1,10 @@
 import torch
+import logging
 from typing import List
 from sentence_transformers import SentenceTransformer
+
+# Configuração de Logger
+logger = logging.getLogger(__name__)
 
 try:
     from openai import OpenAI
@@ -59,11 +63,11 @@ class Embedder:
             else:
                 self.batch_size = 8  # Padrão conservador para CPU
 
-        print(f"⚙️ Configuração Embedder: Device={self.device.upper()} | Batch Size={self.batch_size}")
+        logger.info(f"⚙️ Configuração Embedder: Device={self.device.upper()} | Batch Size={self.batch_size}")
 
         # Inicialização dos Modelos
         if self.method == 'sbert':
-            print(f"🖥️ Inicializando SBERT ({model_name or DEFAULT_SBERT_MODEL})...")
+            logger.info(f"🖥️ Inicializando SBERT ({model_name or DEFAULT_SBERT_MODEL})...")
             sbert_model = model_name or DEFAULT_SBERT_MODEL
             self.model = SentenceTransformer(sbert_model, device=self.device)
 
@@ -75,7 +79,7 @@ class Embedder:
 
             self.client = OpenAI(api_key=openai_api_key)
             self.openai_model = model_name or DEFAULT_OPENAI_MODEL
-            print(f"☁️ Embedder OpenAI pronto: {self.openai_model}")
+            logger.info(f"☁️ Embedder OpenAI pronto: {self.openai_model}")
 
         else:
             raise ValueError("Método inválido. Use 'sbert' ou 'openai'.")
@@ -120,7 +124,7 @@ class Embedder:
                 batch_embeddings = [item.embedding for item in response.data]
                 all_embeddings.extend(batch_embeddings)
             except Exception as e:
-                print(f"⚠️ Erro ao gerar embeddings OpenAI no lote {i}: {e}")
+                logger.info(f"⚠️ Erro ao gerar embeddings OpenAI no lote {i}: {e}")
                 raise e
 
         return all_embeddings
