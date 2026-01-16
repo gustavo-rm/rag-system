@@ -1,10 +1,8 @@
----
+# 🧠 RAGSystem v3.0 - Retrieval-Augmented Generation
 
-# 🧠 RAGSystem v3.0 - Enterprise Retrieval-Augmented Generation
+**RAGSystem v3.0** é uma plataforma de Geração Aumentada por Recuperação (RAG), projetada para maior precisão, baixa latência e escalabilidade. Esta versão implementa estratégias como **Busca Híbrida (Keyword + Vetorial)**, **Re-ranking com Cross-Encoders**, **Roteamento Semântico de Perguntas** e **Caching Inteligente de Duas Camadas**.
 
-**RAGSystem v3.0** é uma plataforma avançada de Geração Aumentada por Recuperação (RAG), projetada para alta precisão, baixa latência e robustez. Diferente de pipelines RAG básicos, esta versão implementa estratégias de ponta como **Busca Híbrida (Keyword + Vetorial)**, **Re-ranking com Cross-Encoders**, **Roteamento Semântico de Perguntas** e **Caching Inteligente de Duas Camadas**.
-
-O sistema foi arquitetado para ser agnóstico em relação ao modelo (suporta LLMs Locais via HuggingFace e GPT-4 via OpenAI) e ao banco de dados (ChromaDB ou Pinecone).
+O sistema foi arquitetado para suportar diferentes versões em relação ao modelo (suporta LLMs Locais via HuggingFace e GPT-4 via OpenAI) e ao banco de dados (ChromaDB ou Pinecone).
 
 ---
 
