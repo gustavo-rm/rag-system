@@ -104,7 +104,8 @@ class LLM:
                     self.model_name,
                     quantization_config=bnb_config,
                     device_map="auto",
-                    trust_remote_code=True
+                    trust_remote_code=True,
+                    attn_implementation = "eager"
                 )
 
                 # Garante pad_token para modelos que não definem (evita erros na geração)
@@ -201,7 +202,8 @@ class LLM:
                 temperature=temperature if temperature > 0 else None,
                 top_p=0.9,
                 eos_token_id=self.tokenizer.eos_token_id,
-                pad_token_id=self.tokenizer.pad_token_id
+                pad_token_id=self.tokenizer.pad_token_id,
+                use_cache=False
             )
 
         # 4. Decodificação e Fatiamento
