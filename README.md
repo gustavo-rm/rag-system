@@ -41,7 +41,8 @@ A versão 3.0 introduz um pipeline de processamento mais sofisticado:
 
 ## 🧩 Arquitetura do Pipeline
 
-```mermaid graph TD
+```mermaid 
+graph TD
     User[Usuário] --> Corrector[Query Corrector]
     Corrector --> Cache{Cache Check}
     Cache -- Hit --> Response[Resposta Imediata]
