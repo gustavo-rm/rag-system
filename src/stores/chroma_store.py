@@ -2,6 +2,10 @@ import os
 import chromadb
 from typing import List, Dict, Any
 from .base import VectorStore
+import logging
+# Configuração de Logger
+logger = logging.getLogger(__name__)
+
 
 class ChromaStore(VectorStore):
     """Implementação do VectorStore para o banco de dados local ChromaDB."""
@@ -17,33 +21,42 @@ class ChromaStore(VectorStore):
             name=self.collection_name,
             metadata={"hnsw:space": "cosine"}
         )
-        print(f"Conectado à coleção '{self.collection_name}' do ChromaDB com sucesso.")
+        logger.info(f"Conectado à coleção '{self.collection_name}' do ChromaDB com sucesso.")
 
     def store_embeddings(self, chunks: List[str], embeddings: List[List[float]], ids: List[str] = None):
         if ids is None:
             ids = [str(i) for i in range(len(chunks))]
 
         self.collection.add(embeddings=embeddings, documents=chunks, ids=ids)
-        print(f"{len(chunks)} embeddings armazenados no ChromaDB.")
+        logger.info(f"{len(chunks)} embeddings armazenados no ChromaDB.")
 
     def search(self, query_embedding: List[float], top_k: int = 5) -> List[Dict[str, Any]]:
+        """
+        Busca os chunks de texto mais relevantes para um embedding de consulta.
+        Retorna uma lista de dicionários no formato padronizado com 'metadata'.
+        """
         results = self.collection.query(
             query_embeddings=[query_embedding],
             n_results=top_k
         )
 
-        # Estrutura o resultado para ser similar ao do Pinecone e mais fácil de usar
         formatted_results = []
         if results and results['documents']:
-            for i in range(len(results['documents'][0])):
+            documents = results['documents'][0]
+            distances = results['distances'][0]
+            ids = results['ids'][0]
+            # metadatas = results['metadatas'][0]  # Chroma também pode retornar metadados
+
+            for i in range(len(documents)):
+                # Garante que a saída seja idêntica à do PineconeStore
                 formatted_results.append({
-                    'id': results['ids'][0][i],
-                    'score': 1 - results['distances'][0][i],  # Converte distância para similaridade
-                    'metadata': {'text': results['documents'][0][i]}
+                    'id': ids[i],
+                    'score': 1 - distances[i],  # Converte distância para similaridade
+                    'metadata': {'text': documents[i]}
                 })
         return formatted_results
 
     def delete(self):
-        print(f"Deletando coleção ChromaDB '{self.collection_name}'...")
+        logger.info(f"Deletando coleção ChromaDB '{self.collection_name}'...")
         self.client.delete_collection(name=self.collection_name)
-        print("Coleção deletada.")
+        logger.info("Coleção deletada.")

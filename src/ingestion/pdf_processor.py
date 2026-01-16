@@ -1,7 +1,9 @@
 import fitz  # PyMuPDF
 import os
 import re
-
+import logging
+# Configuração de Logger
+logger = logging.getLogger(__name__)
 
 class PDFProcessor:
     """
@@ -52,7 +54,7 @@ class PDFProcessor:
                 for page in doc:
                     full_text += page.get_text() + " "
         except Exception as e:
-            print(f"Erro ao processar o PDF {self.pdf_path}: {e}")
+            logger.error(f"Erro ao processar o PDF {self.pdf_path}: {e}")
             return ""
 
         if clean:
@@ -63,7 +65,6 @@ class PDFProcessor:
     def extract_images(self, output_folder: str = 'imagens_extraidas'):
         """
         Extrai todas as imagens de um arquivo PDF.
-        (Esta função já estava ótima e foi mantida como está).
         """
         if not os.path.exists(output_folder):
             os.makedirs(output_folder)
@@ -82,7 +83,7 @@ class PDFProcessor:
                         image_file.write(image_bytes)
                     image_count += 1
 
-        print(f"Total de {image_count} imagens extraídas para a pasta '{output_folder}'.")
+        logger.info(f"Total de {image_count} imagens extraídas para a pasta '{output_folder}'.")
         return image_count
 
 
@@ -92,17 +93,17 @@ if __name__ == '__main__':
     # ou aponte para um PDF existente.
     pdf_file_path = 'exemplo.pdf'  # Substitua pelo caminho do seu PDF
     if not os.path.exists(pdf_file_path):
-        print(f"Arquivo de exemplo '{pdf_file_path}' não encontrado. Crie um para testar o código.")
+        logger.warning(f"Arquivo de exemplo '{pdf_file_path}' não encontrado. Crie um para testar o código.")
     else:
         processor = PDFProcessor(pdf_path=pdf_file_path)
 
         # Extrai e limpa o texto
-        print("--- Extraindo Texto Limpo ---")
+        logger.info("--- Extraindo Texto Limpo ---")
         cleaned_text = processor.extract_text()
-        print(cleaned_text[:1000] + "...")  # Imprime os primeiros 1000 caracteres
+        logger.info(cleaned_text[:1000] + "...")  # Imprime os primeiros 1000 caracteres
 
-        print("\n" + "=" * 50 + "\n")
+        logger.info("\n" + "=" * 50 + "\n")
 
         # Extrai as imagens
-        print("--- Extraindo Imagens ---")
+        logger.info("--- Extraindo Imagens ---")
         processor.extract_images()
