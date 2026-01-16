@@ -66,11 +66,26 @@ def main():
     # Chunker
     chunker = Chunker(chunk_size=512, chunk_overlap=50)
 
-    # Embedder
+    # --- Configuração do Modelo de Embedding ---
+
+    # Caminho onde o script de treino salvou o modelo
+    finetuned_model_path = "models/finetuned_v3"
+    base_model_name = "paraphrase-multilingual-mpnet-base-v2"
+
+    # Lógica inteligente de seleção
+    if os.path.exists(finetuned_model_path):
+        logger.info(f"💎 Modelo Fine-Tuned detectado! Usando: {finetuned_model_path}")
+        selected_model = finetuned_model_path
+    else:
+        logger.warning(
+            f"⚠️ Modelo Fine-Tuned não encontrado em '{finetuned_model_path}'. Usando modelo base: {base_model_name}")
+        selected_model = base_model_name
+
+    # Instancia o Embedder com o modelo escolhido
     embedder = Embedder(
         method='sbert',
-        model_name='paraphrase-multilingual-mpnet-base-v2'
-        # batch_size=None (será definido automaticamente: 32 para GPU, 8 para CPU)
+        model_name=selected_model
+        # batch_size será auto-configurado (32 para GPU)
     )
 
     # ReRanker: Atualizado para modelo BAAI (Melhor suporte a Multilíngue/PT-BR)

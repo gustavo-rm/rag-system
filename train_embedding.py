@@ -1,6 +1,8 @@
 import argparse
 import logging
 import os
+import gc
+import torch
 
 from src.utils.logger import setup_logging
 
@@ -63,6 +65,26 @@ def main():
 
         generator = SyntheticTripletGenerator(llm=llm, num_examples=args.num_gen)
         train_examples = generator.generate(chunks=chunks)
+
+    # ==============================================================================
+    # 🕵️ CORREÇÃO DE MEMÓRIA (Adicione este bloco ANTES de verificar train_examples)
+    # ==============================================================================
+    if args.mode == 'synthetic':
+        logger.info("🧹 Limpando LLM da memória para liberar VRAM para o treino...")
+
+        # 1. Deleta as referências aos objetos pesados
+        del llm
+        del generator
+
+        # 2. Força o Python a limpar a memória RAM
+        gc.collect()
+
+        # 3. Força o PyTorch a limpar a memória da GPU
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        logger.info(f"Memória VRAM liberada. Memória alocada atual: {torch.cuda.memory_allocated() / 1024 ** 2:.2f} MB")
+    # ==============================================================================
 
     # 2. TREINAMENTO
     if train_examples:
