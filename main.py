@@ -10,6 +10,11 @@ logger = logging.getLogger(__name__)
 # --- Carregamento de Variáveis ---
 load_dotenv()
 
+# --- CORREÇÃO DE TIMEOUT ---
+# Força o uso de arquivos em cache local, evitando conexões com HuggingFace
+os.environ["HF_HUB_OFFLINE"] = "1"
+os.environ["TRANSFORMERS_OFFLINE"] = "1"
+
 # --- Importações ---
 
 # Ingestion

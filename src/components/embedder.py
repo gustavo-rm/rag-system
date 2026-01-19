@@ -69,7 +69,11 @@ class Embedder:
         if self.method == 'sbert':
             logger.info(f"🖥️ Inicializando SBERT ({model_name or DEFAULT_SBERT_MODEL})...")
             sbert_model = model_name or DEFAULT_SBERT_MODEL
-            self.model = SentenceTransformer(sbert_model, device=self.device)
+            self.model = SentenceTransformer(
+                sbert_model,
+                device=self.device,
+                tokenizer_kwargs={"fix_mistral_regex": True}
+            )
 
         elif self.method == 'openai':
             if not OpenAI:

@@ -117,7 +117,7 @@ class Chatbot:
 
         # --- 1. CORREÇÃO ORTOGRÁFICA ---
         # Usa o método .correct() que definimos no QueryCorrector atualizado
-        corrected_input = self.query_corrector.correct(user_input)
+        corrected_input = self.query_corrector.correct_query(user_input)
         if corrected_input != user_input:
             logger.info(f"✏️ Correção aplicada: '{user_input}' -> '{corrected_input}'")
 
