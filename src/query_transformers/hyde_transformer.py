@@ -24,8 +24,8 @@ class HyDETransformer(QueryTransformer):
         hypothetical_doc = self.llm.generate_response(
             prompt=self.prompt_template.format(question=query),
             system_prompt="Você é um gerador de dados sintéticos para RAG.",
-            temperature=0.3,
-            max_new_tokens=250
+            temperature=0.4,
+            max_new_tokens=120
         )
 
         # Retorna a Query Original E o Documento Hipotético.
