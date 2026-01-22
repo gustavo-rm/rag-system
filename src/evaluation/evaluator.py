@@ -7,48 +7,48 @@ from datasets import Dataset
 # Ragas Metrics
 from ragas import evaluate
 from ragas.metrics import (
-    faithfulness,  # O modelo alucinou? (Geração)
-    answer_relevancy,  # Respondeu o que foi perguntado? (Geração)
-    context_precision,  # O Retriever trouxe documentos úteis no topo? (Recuperação)
-    context_recall,  # O Retriever trouxe TODA a informação necessária? (Recuperação)
+    faithfulness,  # Did the model hallucinate? (Generation)
+    answer_relevancy,  # Did it answer what was asked? (Generation)
+    context_precision,  # Did the Retriever bring useful documents at the top? (Retrieval)
+    context_recall,  # Did the Retriever bring ALL necessary information? (Retrieval)
 )
-# Integração com LangChain (Necessário para o RAGAS funcionar bem)
+# LangChain Integration (Required for RAGAS to work well)
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
-# Configuração de Logger
+# Logger Configuration
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 class RAGEvaluator:
     """
-    Avaliador Semântico para sistemas RAG (Retrieval-Augmented Generation).
+    Semantic Evaluator for RAG (Retrieval-Augmented Generation) systems.
 
-    Usa métricas baseadas em LLM, que avaliam o significado e a veracidade das respostas.
+    Uses LLM-based metrics, which assess the meaning and truthfulness of responses.
 
-    Esta classe atua como um 'Juiz' independente. Recomenda-se usar um modelo
-    forte (ex: GPT-4o) para a avaliação, independente do modelo usado no RAG.
+    This class acts as an independent 'Judge'. It is recommended to use a strong
+    model (e.g., GPT-4o) for evaluation, independent of the model used in the RAG.
     """
 
     def __init__(self, openai_api_key: Optional[str] = None):
         """
-        Inicializa o avaliador configurando o LLM 'Juiz'.
+        Initializes the evaluator by configuring the 'Judge' LLM.
 
         Args:
-            openai_api_key (str): Chave da OpenAI. Se None, tenta pegar do ambiente.
-                                  O RAGAS funciona melhor com a OpenAI como juiz.
+            openai_api_key (str): OpenAI Key. If None, attempts to retrieve from the environment.
+                                  RAGAS works best with OpenAI as a judge.
         """
         self.api_key = openai_api_key or os.getenv("OPENAI_API_KEY")
         if not self.api_key:
             logger.warning(
-                "⚠️ RAGEvaluator: API Key da OpenAI não encontrada. A avaliação pode falhar se não houver configuração global.")
+                "⚠️ RAGEvaluator: OpenAI API Key not found. Evaluation may fail if no global configuration exists.")
 
-        # Configura o LLM e Embeddings especificamente para o RAGAS (Juiz)
-        # Usamos gpt-4o-mini ou gpt-4 para avaliação por serem mais rigorosos
+        # Configure LLM and Embeddings specifically for RAGAS (Judge)
+        # Using gpt-4o-mini or gpt-4 for evaluation as they are more rigorous
         self.judge_llm = ChatOpenAI(model="gpt-4o-mini", api_key=self.api_key)
         self.judge_embeddings = OpenAIEmbeddings(api_key=self.api_key)
 
-        # Métricas divididas por caso de uso
+        # Metrics divided by use case
         self.metrics_with_ground_truth = [
             faithfulness,
             answer_relevancy,
@@ -61,7 +61,7 @@ class RAGEvaluator:
             answer_relevancy
         ]
 
-        logger.info("⚖️ RAGEvaluator (v3.1) inicializado com Juiz OpenAI.")
+        logger.info("⚖️ RAGEvaluator (v3.1) initialized with OpenAI Judge.")
 
     def evaluate_single(self,
                         question: str,
@@ -69,18 +69,18 @@ class RAGEvaluator:
                         retrieved_contexts: List[str],
                         ground_truth: Optional[str] = None) -> Dict[str, float]:
         """
-        Avalia uma única interação do RAG.
+        Evaluates a single RAG interaction.
 
         Args:
-            question (str): A pergunta do usuário.
-            generated_answer (str): A resposta final do Chatbot.
-            retrieved_contexts (List[str]): Lista de textos recuperados (contexto).
-            ground_truth (str, optional): A resposta ideal (gabarito).
+            question (str): The user's question.
+            generated_answer (str): The Chatbot's final response.
+            retrieved_contexts (List[str]): List of retrieved texts (context).
+            ground_truth (str, optional): The ideal answer (answer key).
 
         Returns:
-            Dict[str, float]: Dicionário com as pontuações (0.0 a 1.0).
+            Dict[str, float]: Dictionary with scores (0.0 to 1.0).
         """
-        # Prepara os dados no formato que o RAGAS espera
+        # Prepares data in the format RAGAS expects
         data = {
             "question": [question],
             "answer": [generated_answer],
@@ -92,15 +92,15 @@ class RAGEvaluator:
         if ground_truth:
             data["ground_truth"] = [ground_truth]
             metrics_to_use = self.metrics_with_ground_truth
-            logger.info("Executando avaliação completa (com Ground Truth)...")
+            logger.info("Running full evaluation (with Ground Truth)...")
         else:
-            logger.info("Executando avaliação parcial (sem Ground Truth - Apenas Geração)...")
+            logger.info("Running partial evaluation (no Ground Truth - Generation Only)...")
 
         try:
             dataset = Dataset.from_dict(data)
 
-            # Executa a avaliação
-            # Passamos o llm e embeddings explicitamente para garantir que o RAGAS use nossa config
+            # Executes evaluation
+            # Explicitly passing llm and embeddings to ensure RAGAS uses our config
             results = evaluate(
                 dataset=dataset,
                 metrics=metrics_to_use,
@@ -109,31 +109,31 @@ class RAGEvaluator:
                 raise_exceptions=False
             )
 
-            # Converte para dicionário Python padrão
-            # O objeto results do RAGAS se comporta como dict
+            # Convert to standard Python dictionary
+            # The RAGAS results object behaves like a dict
             scores = {k: round(v, 4) for k, v in results.items()}
 
-            logger.info(f"📊 Resultados da Avaliação: {scores}")
+            logger.info(f"📊 Evaluation Results: {scores}")
             return scores
 
         except Exception as e:
-            logger.error(f"❌ Falha ao executar RAGAS: {e}")
+            logger.error(f"❌ Failed to run RAGAS: {e}")
             return {"error": 0.0}
 
     def evaluate_batch(self, samples: List[Dict[str, Any]]) -> pd.DataFrame:
         """
-        Avalia um lote de perguntas (Golden Dataset) e retorna um DataFrame.
+        Evaluates a batch of questions (Golden Dataset) and returns a DataFrame.
 
         Args:
-            samples (List[Dict]): Lista de dicts contendo chaves:
-                                  'question', 'answer', 'contexts', 'ground_truth' (opcional).
+            samples (List[Dict]): List of dicts containing keys:
+                                  'question', 'answer', 'contexts', 'ground_truth' (optional).
 
         Returns:
-            pd.DataFrame: Tabela com resultados comparativos.
+            pd.DataFrame: Table with comparative results.
         """
-        logger.info(f"Iniciando avaliação em lote de {len(samples)} itens...")
+        logger.info(f"Starting batch evaluation of {len(samples)} items...")
 
-        # Transforma lista de dicts em dict de listas (formato columnar do Dataset)
+        # Transforms list of dicts into dict of lists (Dataset columnar format)
         data = {
             "question": [],
             "answer": [],
@@ -166,5 +166,5 @@ class RAGEvaluator:
         )
 
         df = results.to_pandas()
-        logger.info("Avaliação em lote concluída.")
+        logger.info("Batch evaluation completed.")
         return df

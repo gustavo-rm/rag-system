@@ -4,19 +4,26 @@ from typing import List, Dict, Any, Optional
 from .base import VectorStore
 import logging
 
-# Configuração de Logger
+# Logger Configuration
 logger = logging.getLogger(__name__)
 
 
 class ChromaStore(VectorStore):
-    """Implementação do VectorStore para o banco de dados local ChromaDB."""
+    """VectorStore implementation for the local database ChromaDB."""
 
     def __init__(self, path: str = "./chroma_db", collection_name: str = "rag_collection"):
-        # Garante que o diretório de persistência exista
+        """
+        Initializes the ChromaDB store.
+
+        Args:
+            path (str): Path to the persistence directory.
+            collection_name (str): Name of the collection to use.
+        """
+        # Ensures the persistence directory exists
         if not os.path.exists(path):
             os.makedirs(path)
 
-        # Configurações para evitar warnings de telemetria
+        # Settings to avoid telemetry warnings
         settings = chromadb.config.Settings(anonymized_telemetry=False)
 
         self.client = chromadb.PersistentClient(path=path, settings=settings)
@@ -25,25 +32,32 @@ class ChromaStore(VectorStore):
             name=self.collection_name,
             metadata={"hnsw:space": "cosine"}
         )
-        logger.info(f"Conectado à coleção '{self.collection_name}' do ChromaDB com sucesso.")
+        logger.info(f"Successfully connected to ChromaDB collection '{self.collection_name}'.")
 
     def store_embeddings(self,
                          chunks: List[str],
                          embeddings: List[List[float]],
                          ids: List[str] = None,
                          metadatas: Optional[List[Dict[str, Any]]] = None):
+        """
+        Stores embeddings and associated data in ChromaDB.
 
+        Args:
+            chunks (List[str]): List of texts.
+            embeddings (List[List[float]]): List of vectors.
+            ids (List[str], optional): List of unique IDs.
+            metadatas (Optional[List[Dict[str, Any]]]): Metadata for each chunk.
+        """
         if ids is None:
             ids = [str(i) for i in range(len(chunks))]
 
-        # ChromaDB exige que metadatas seja None ou uma lista de Dicts válida.
-        # Se metadatas for None, criamos dicts vazios ou deixamos None se a lib aceitar.
-        # Para garantir compatibilidade futura (BM25), vamos garantir que existe metadata.
+        # ChromaDB requires metadatas to be None or a valid list of Dicts.
+        # To ensure future compatibility (e.g., BM25), we ensure metadata exists.
         if metadatas is None:
             metadatas = [{} for _ in range(len(chunks))]
 
-        # Opcional: Salvar o texto dentro do metadata também,
-        # embora o Chroma salve em 'documents', isso facilita interoperabilidade.
+        # Optional: Save text inside metadata as well,
+        # although Chroma saves it in 'documents', this facilitates interoperability.
         for i, meta in enumerate(metadatas):
             meta['text'] = chunks[i]
 
@@ -53,23 +67,29 @@ class ChromaStore(VectorStore):
             ids=ids,
             metadatas=metadatas
         )
-        logger.info(f"{len(chunks)} embeddings e metadados armazenados no ChromaDB.")
+        logger.info(f"{len(chunks)} embeddings and metadata stored in ChromaDB.")
 
     def search(self, query_embedding: List[float], top_k: int = 5) -> List[Dict[str, Any]]:
         """
-        Busca os chunks de texto mais relevantes.
-        Retorna estrutura compatível: {'id', 'score', 'metadata': {'text': ..., 'source': ...}}
+        Searches for the most relevant text chunks.
+
+        Args:
+            query_embedding (List[float]): The query vector.
+            top_k (int): Number of results to return.
+
+        Returns:
+            List[Dict[str, Any]]: Compatible structure: {'id', 'score', 'metadata': {'text': ..., 'source': ...}}
         """
         results = self.collection.query(
             query_embeddings=[query_embedding],
             n_results=top_k,
-            # Importante: Pedir explicitamente metadatas e documents
+            # Important: Explicitly request metadatas and documents
             include=["documents", "metadatas", "distances"]
         )
 
         formatted_results = []
         if results and results['ids']:
-            # Chroma retorna listas de listas (batch query). Pegamos o índice [0].
+            # Chroma returns lists of lists (batch query). We take index [0].
             ids_list = results['ids'][0]
             distances_list = results['distances'][0]
             documents_list = results['documents'][0]
@@ -77,18 +97,18 @@ class ChromaStore(VectorStore):
 
             for i in range(len(ids_list)):
 
-                # Prepara o metadata
+                # Prepare metadata
                 meta = metadatas_list[i] if metadatas_list[i] else {}
 
-                # Garante que o texto esteja acessível via metadata['text']
-                # (Necessário para o HybridRetriever funcionar bem)
+                # Ensure text is accessible via metadata['text']
+                # (Required for HybridRetriever to work well)
                 if 'text' not in meta:
                     meta['text'] = documents_list[i]
 
                 formatted_results.append({
                     'id': ids_list[i],
-                    # Converte distância Cosseno (0 a 2) para Similaridade (1 a -1)
-                    # Nota: Chroma retorna distância angular/cosseno. Quanto menor, melhor.
+                    # Convert Cosine distance (0 to 2) to Similarity (1 to -1)
+                    # Note: Chroma returns angular/cosine distance. Smaller is better.
                     'score': 1 - distances_list[i],
                     'metadata': meta
                 })
@@ -96,6 +116,7 @@ class ChromaStore(VectorStore):
         return formatted_results
 
     def delete(self):
-        logger.info(f"Deletando coleção ChromaDB '{self.collection_name}'...")
+        """Deletes the ChromaDB collection."""
+        logger.info(f"Deleting ChromaDB collection '{self.collection_name}'...")
         self.client.delete_collection(name=self.collection_name)
-        logger.info("Coleção deletada.")
+        logger.info("Collection deleted.")

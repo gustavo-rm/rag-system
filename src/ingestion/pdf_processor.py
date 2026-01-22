@@ -2,51 +2,60 @@ import fitz  # PyMuPDF
 import os
 import re
 import logging
-# Configuração de Logger
+# Logger Configuration
 logger = logging.getLogger(__name__)
 
 class PDFProcessor:
     """
-    Processa arquivos PDF para extrair e limpar texto, além de extrair imagens.
-    Utiliza a biblioteca PyMuPDF (fitz) para performance e precisão superiores.
+    Processes PDF files to extract and clean text, as well as extract images.
+    Uses the PyMuPDF (fitz) library for superior performance and accuracy.
     """
 
     def __init__(self, pdf_path: str):
         """
-        Inicializa o processador com o caminho do arquivo PDF.
+        Initializes the processor with the PDF file path.
 
-        Parâmetros:
-        - pdf_path (str): Caminho do arquivo PDF a ser processado.
+        Args:
+            pdf_path (str): Path of the PDF file to be processed.
+
+        Raises:
+            FileNotFoundError: If the PDF file is not found.
         """
         if not os.path.exists(pdf_path):
-            raise FileNotFoundError(f"O arquivo PDF não foi encontrado em: {pdf_path}")
+            raise FileNotFoundError(f"PDF file not found at: {pdf_path}")
         self.pdf_path = pdf_path
 
     def _clean_text(self, text: str) -> str:
         """
-        Realiza uma limpeza básica no texto extraído para melhorar a qualidade.
-        - Junta palavras que foram quebradas por hífens.
-        - Remove quebras de linha excessivas.
-        - Normaliza espaços em branco.
+        Performs basic cleaning on extracted text to improve quality.
+        - Joins words broken by hyphens.
+        - Removes excessive line breaks.
+        - Normalizes whitespace.
+
+        Args:
+            text (str): The raw text to clean.
+
+        Returns:
+            str: The cleaned text.
         """
-        # 1. Junta palavras que foram separadas por hífen no final da linha
-        # Ex: "inteli- gência" -> "inteligência"
+        # 1. Joins words separated by a hyphen at the end of the line
+        # Ex: "intelli- gence" -> "intelligence"
         text = re.sub(r'(\w+)-\s*\n\s*(\w+)', r'\1\2', text)
 
-        # 2. Substitui múltiplos espaços ou quebras de linha por um único espaço
+        # 2. Replaces multiple spaces or line breaks with a single space
         text = re.sub(r'\s+', ' ', text)
 
         return text.strip()
 
     def extract_text(self, clean: bool = True) -> str:
         """
-        Extrai todo o texto de um arquivo PDF usando PyMuPDF para alta fidelidade.
+        Extracts all text from a PDF file using PyMuPDF for high fidelity.
 
-        Parâmetros:
-        - clean (bool): Se True, aplica a função de limpeza ao texto extraído.
+        Args:
+            clean (bool): If True, applies the cleaning function to the extracted text.
 
-        Retorna:
-        - Uma string contendo todo o texto extraído do PDF.
+        Returns:
+            str: A string containing all text extracted from the PDF.
         """
         full_text = ""
         try:
@@ -54,7 +63,7 @@ class PDFProcessor:
                 for page in doc:
                     full_text += page.get_text() + " "
         except Exception as e:
-            logger.error(f"Erro ao processar o PDF {self.pdf_path}: {e}")
+            logger.error(f"Error processing PDF {self.pdf_path}: {e}")
             return ""
 
         if clean:
@@ -62,9 +71,15 @@ class PDFProcessor:
 
         return full_text.strip()
 
-    def extract_images(self, output_folder: str = 'imagens_extraidas'):
+    def extract_images(self, output_folder: str = 'extracted_images'):
         """
-        Extrai todas as imagens de um arquivo PDF.
+        Extracts all images from a PDF file.
+
+        Args:
+            output_folder (str): Folder to save extracted images.
+
+        Returns:
+            int: The number of images extracted.
         """
         if not os.path.exists(output_folder):
             os.makedirs(output_folder)
@@ -83,27 +98,27 @@ class PDFProcessor:
                         image_file.write(image_bytes)
                     image_count += 1
 
-        logger.info(f"Total de {image_count} imagens extraídas para a pasta '{output_folder}'.")
+        logger.info(f"Total of {image_count} images extracted to '{output_folder}'.")
         return image_count
 
 
-# --- Como Usar ---
+# --- Usage Example ---
 if __name__ == '__main__':
-    # Crie um arquivo PDF de exemplo chamado 'exemplo.pdf' para testar
-    # ou aponte para um PDF existente.
-    pdf_file_path = 'exemplo.pdf'  # Substitua pelo caminho do seu PDF
+    # Create a sample PDF file called 'example.pdf' to test
+    # or point to an existing PDF.
+    pdf_file_path = 'example.pdf'  # Replace with your PDF path
     if not os.path.exists(pdf_file_path):
-        logger.warning(f"Arquivo de exemplo '{pdf_file_path}' não encontrado. Crie um para testar o código.")
+        logger.warning(f"Sample file '{pdf_file_path}' not found. Create one to test the code.")
     else:
         processor = PDFProcessor(pdf_path=pdf_file_path)
 
-        # Extrai e limpa o texto
-        logger.info("--- Extraindo Texto Limpo ---")
+        # Extract and clean text
+        logger.info("--- Extracting Clean Text ---")
         cleaned_text = processor.extract_text()
-        logger.info(cleaned_text[:1000] + "...")  # Imprime os primeiros 1000 caracteres
+        logger.info(cleaned_text[:1000] + "...")  # Prints the first 1000 characters
 
         logger.info("\n" + "=" * 50 + "\n")
 
-        # Extrai as imagens
-        logger.info("--- Extraindo Imagens ---")
+        # Extract images
+        logger.info("--- Extracting Images ---")
         processor.extract_images()

@@ -3,7 +3,7 @@ import logging
 from typing import List
 from sentence_transformers import SentenceTransformer
 
-# Configuração de Logger
+# Logger Configuration
 logger = logging.getLogger(__name__)
 
 try:
@@ -11,63 +11,63 @@ try:
 except ImportError:
     OpenAI = None
 
-# Configurações de Modelos Padrão
+# Default Model Configurations
 DEFAULT_SBERT_MODEL = 'paraphrase-multilingual-mpnet-base-v2'
 DEFAULT_OPENAI_MODEL = "text-embedding-3-small"
 
 
 class Embedder:
     """
-    Motor unificado para geração de Embeddings (Vetores Semânticos) de alta performance.
+    Unified high-performance engine for generating Embeddings (Semantic Vectors).
 
-    Esta classe abstrai a interface entre modelos locais (via Sentence-Transformers/SBERT)
-    e APIs remotas (via OpenAI), oferecendo uma camada de otimização automática.
+    This class abstracts the interface between local models (via Sentence-Transformers/SBERT)
+    and remote APIs (via OpenAI), providing an automatic optimization layer.
 
-    Destaques da implementação:
-    - **Aceleração de Hardware:** Detecção automática de GPU (CUDA) para maximizar o throughput.
-    - **Batching Dinâmico:** Gerenciamento inteligente do tamanho dos lotes para evitar
-      estouro de memória (OOM) em GPUs locais e respeitar 'Rate Limits' em APIs externas.
-    - **Normalização:** Garante que os vetores de saída sejam normalizados (norma L2),
-      essencial para cálculos precisos de similaridade de cosseno.
+    Implementation highlights:
+    - **Hardware Acceleration:** Automatic GPU (CUDA) detection to maximize throughput.
+    - **Dynamic Batching:** Intelligent batch size management to avoid
+      Out Of Memory (OOM) errors on local GPUs and respect 'Rate Limits' on external APIs.
+    - **Normalization:** Ensures output vectors are normalized (L2 norm),
+      essential for accurate cosine similarity calculations.
     """
 
     def __init__(self, method: str = 'sbert', model_name: str = None, device: str = None,
                  openai_api_key: str = None, batch_size: int = None):
         """
-        Inicializa o Embedder com configurações de hardware e performance.
+        Initializes the Embedder with hardware and performance configurations.
 
         Args:
-            method (str): 'sbert' (local) ou 'openai' (api).
-            model_name (str, optional): Nome do modelo.
-            openai_api_key (str, optional): Chave da API (apenas para method='openai').
-            batch_size (int, optional): Tamanho do lote de processamento.
-                                        Se None, será definido automaticamente com base no hardware:
+            method (str): 'sbert' (local) or 'openai' (api).
+            model_name (str, optional): Name of the model.
+            openai_api_key (str, optional): API Key (only for method='openai').
+            batch_size (int, optional): Processing batch size.
+                                        If None, it will be automatically defined based on hardware:
                                         - GPU: 32
                                         - CPU: 8
                                         - OpenAI: 100
         """
         self.method = method
 
-        # Para GPUs de 8GB, o Embedder DEVE ficar na CPU para deixar espaço pro LLM.
-        self.device = self._resolve_device(method) if device is None else device # Força CPU se não especificado
+        # For 8GB GPUs, the Embedder MUST stay on CPU to leave room for the LLM.
+        self.device = self._resolve_device(method) if device is None else device # Forces CPU if not specified
 
-        # --- Lógica para definir o Batch Size ---
+        # --- Logic to define Batch Size ---
         if batch_size is not None:
             self.batch_size = batch_size
         else:
-            # Definição automática de defaults seguros
+            # Automatic definition of safe defaults
             if self.method == 'openai':
-                self.batch_size = 100  # API aguenta lotes maiores
+                self.batch_size = 100  # API handles larger batches
             elif self.device == 'cuda':
-                self.batch_size = 32  # Padrão seguro para GPU média
+                self.batch_size = 32  # Safe default for average GPU
             else:
-                self.batch_size = 8  # Padrão conservador para CPU
+                self.batch_size = 8  # Conservative default for CPU
 
-        logger.info(f"⚙️ Configuração Embedder: Device={self.device.upper()} | Batch Size={self.batch_size}")
+        logger.info(f"⚙️ Embedder Configuration: Device={self.device.upper()} | Batch Size={self.batch_size}")
 
-        # Inicialização dos Modelos
+        # Model Initialization
         if self.method == 'sbert':
-            logger.info(f"🖥️ Inicializando SBERT ({model_name or DEFAULT_SBERT_MODEL})...")
+            logger.info(f"🖥️ Initializing SBERT ({model_name or DEFAULT_SBERT_MODEL})...")
             sbert_model = model_name or DEFAULT_SBERT_MODEL
             self.model = SentenceTransformer(
                 sbert_model,
@@ -77,25 +77,43 @@ class Embedder:
 
         elif self.method == 'openai':
             if not OpenAI:
-                raise ImportError("Biblioteca 'openai' não instalada.")
+                raise ImportError("'openai' library not installed.")
             if not openai_api_key:
-                raise ValueError("API Key é obrigatória para o método OpenAI.")
+                raise ValueError("API Key is required for OpenAI method.")
 
             self.client = OpenAI(api_key=openai_api_key)
             self.openai_model = model_name or DEFAULT_OPENAI_MODEL
-            logger.info(f"☁️ Embedder OpenAI pronto: {self.openai_model}")
+            logger.info(f"☁️ OpenAI Embedder ready: {self.openai_model}")
 
         else:
-            raise ValueError("Método inválido. Use 'sbert' ou 'openai'.")
+            raise ValueError("Invalid method. Use 'sbert' or 'openai'.")
 
     def _resolve_device(self, method: str, prefer_gpu: bool = False) -> str:
+        """
+        Resolves the device to be used (CPU or CUDA).
+
+        Args:
+            method (str): The embedding method ('sbert' or 'openai').
+            prefer_gpu (bool): Whether to prefer GPU if available.
+
+        Returns:
+            str: 'cuda' or 'cpu'.
+        """
         if not torch.cuda.is_available() and method != 'sbert':
             return "cpu"
 
         return "cuda" if prefer_gpu else "cpu"
 
     def generate_embeddings(self, chunks: List[str]) -> List[List[float]]:
-        """Gera a representação vetorial para uma lista de textos."""
+        """
+        Generates vector representation for a list of texts.
+
+        Args:
+            chunks (List[str]): List of text chunks to embed.
+
+        Returns:
+            List[List[float]]: List of embeddings.
+        """
         if not chunks:
             return []
 
@@ -106,8 +124,14 @@ class Embedder:
 
     def _generate_sbert_embeddings(self, chunks: List[str]) -> List[List[float]]:
         """
-        Gera embeddings locais usando Sentence-Transformers.
-        Usa o self.batch_size definido na inicialização.
+        Generates local embeddings using Sentence-Transformers.
+        Uses the self.batch_size defined at initialization.
+
+        Args:
+            chunks (List[str]): List of text chunks.
+
+        Returns:
+            List[List[float]]: List of embeddings.
         """
         embeddings = self.model.encode(
             chunks,
@@ -120,8 +144,14 @@ class Embedder:
 
     def _generate_openai_embeddings(self, chunks: List[str]) -> List[List[float]]:
         """
-        Gera embeddings via API com tratamento de lotes.
-        Usa o self.batch_size para controlar requisições à API.
+        Generates embeddings via API with batch handling.
+        Uses self.batch_size to control API requests.
+
+        Args:
+            chunks (List[str]): List of text chunks.
+
+        Returns:
+            List[List[float]]: List of embeddings.
         """
         all_embeddings = []
 
@@ -134,7 +164,7 @@ class Embedder:
                 batch_embeddings = [item.embedding for item in response.data]
                 all_embeddings.extend(batch_embeddings)
             except Exception as e:
-                logger.info(f"⚠️ Erro ao gerar embeddings OpenAI no lote {i}: {e}")
+                logger.info(f"⚠️ Error generating OpenAI embeddings in batch {i}: {e}")
                 raise e
 
         return all_embeddings

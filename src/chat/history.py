@@ -8,130 +8,142 @@ logger = logging.getLogger(__name__)
 
 class ChatHistory:
     """
-    Gerencia o histórico de conversação com estratégias de Janela Deslizante (Sliding Window)
-    e Persistência.
+    Manages conversation history with Sliding Window and Persistence strategies.
 
-    Evita o estouro de contexto do LLM mantendo apenas as mensagens mais recentes
-    e permite salvar/carregar o estado da conversa.
+    Prevents LLM context overflow by keeping only the most recent messages
+    and allows saving/loading the conversation state.
     """
 
     def __init__(self, max_history_len: int = 10, persist_directory: str = "data/chat_logs"):
         """
-        Inicializa o gerenciador de histórico.
+        Initializes the history manager.
 
         Args:
-            max_history_len (int): Número máximo de TROCAS de mensagens (pares User/AI) a manter.
-                                   Ex: 10 significa manter as últimas 20 mensagens (10 do user, 10 da AI).
-            persist_directory (str): Pasta onde os históricos serão salvos.
+            max_history_len (int): Maximum number of message EXCHANGES (User/AI pairs) to keep.
+                                   E.g., 10 means keeping the last 20 messages (10 user, 10 AI).
+            persist_directory (str): Folder where histories will be saved.
         """
         self.max_history_len = max_history_len
         self.persist_directory = persist_directory
         self.messages: List[Dict[str, str]] = []
 
-        # Garante que o diretório de logs existe
+        # Ensures the logs directory exists
         if not os.path.exists(persist_directory):
             os.makedirs(persist_directory)
 
     def is_empty(self) -> bool:
-        """Retorna True se o histórico não tiver nenhuma mensagem."""
+        """Returns True if the history has no messages."""
         return len(self.messages) == 0
 
     def add_message(self, role: str, content: str):
         """
-        Adiciona uma nova mensagem e aplica a poda automática (trimming).
+        Adds a new message and applies automatic trimming.
 
         Args:
-            role (str): 'user', 'assistant' ou 'system'.
-            content (str): O texto da mensagem.
+            role (str): 'user', 'assistant', or 'system'.
+            content (str): The text of the message.
         """
         self.messages.append({"role": role, "content": content})
 
-        # Verifica se precisa podar o histórico antigo
+        # Checks if old history needs trimming
         self._enforce_window_limit()
 
     def _enforce_window_limit(self):
         """
-        (Interno) Mantém o histórico dentro do tamanho limite.
+        (Internal) Keeps the history within the size limit.
 
-        Estratégia: Remove as mensagens mais antigas, MAS preserva a primeira
-        se for uma mensagem de 'system' (instrução inicial), pois ela define a persona.
+        Strategy: Removes the oldest messages, BUT preserves the first one
+        if it is a 'system' message (initial instruction), as it defines the persona.
         """
-        # Se temos uma mensagem de sistema no índice 0, não queremos removê-la
+        # If we have a system message at index 0, we don't want to remove it
         has_system_prompt = len(self.messages) > 0 and self.messages[0]['role'] == 'system'
 
-        # O limite efetivo é (2 * max_len) porque contamos pares
+        # The effective limit is (2 * max_len) because we count pairs
         effective_limit = self.max_history_len * 2
 
         if has_system_prompt:
-            # Se exceder, mantemos a [0] e pegamos as últimas (limit - 1)
+            # If exceeded, keep [0] and take the last (limit - 1)
             if len(self.messages) > effective_limit + 1:
                 removed_count = len(self.messages) - (effective_limit + 1)
-                # Mantém system + últimas N
+                # Keep system + last N
                 self.messages = [self.messages[0]] + self.messages[-(effective_limit):]
-                logger.debug(f"Histórico podado. {removed_count} mensagens antigas removidas (System prompt mantido).")
+                logger.debug(f"History trimmed. {removed_count} old messages removed (System prompt kept).")
         else:
-            # Poda simples
+            # Simple trimming
             if len(self.messages) > effective_limit:
                 self.messages = self.messages[-effective_limit:]
-                logger.debug("Histórico podado (janela deslizante aplicada).")
+                logger.debug("History trimmed (sliding window applied).")
 
     def get_formatted_history(self, format_type: str = "text") -> str:
         """
-        Retorna o histórico formatado para injetar no Prompt do LLM.
+        Returns the history formatted for injection into the LLM Prompt.
 
         Args:
-            format_type (str): 'text' para string simples ou 'chatML' (futuro).
+            format_type (str): 'text' for simple string or 'chatML' (future).
 
         Returns:
-            str: Histórico formatado.
+            str: Formatted history.
         """
         if not self.messages:
             return ""
 
         formatted_string = ""
         for msg in self.messages:
-            # Pula mensagens de sistema na formatação visual, se desejar
+            # Skip system messages in visual formatting, if desired
             if msg["role"] == "system":
                 continue
 
-            role_name = "Usuário" if msg["role"] == "user" else "Assistente"
+            role_name = "User" if msg["role"] == "user" else "Assistant"
             formatted_string += f"{role_name}: {msg['content']}\n"
 
         return formatted_string.strip()
 
     def get_messages_for_api(self) -> List[Dict[str, str]]:
         """
-        Retorna a lista crua de dicionários, ideal para APIs que aceitam
-        o formato messages=[...] (como OpenAI e HuggingFace Chat Templates).
+        Returns the raw list of dictionaries, ideal for APIs that accept
+        the messages=[...] format (like OpenAI and HuggingFace Chat Templates).
+
+        Returns:
+            List[Dict[str, str]]: The list of message dictionaries.
         """
         return self.messages
 
     def clear(self):
-        """Limpa o histórico atual."""
+        """Clears the current history."""
         self.messages = []
-        logger.info("Histórico de conversa limpo.")
+        logger.info("Conversation history cleared.")
 
-    # --- Persistência (Salvar/Carregar) ---
+    # --- Persistence (Save/Load) ---
 
     def save_session(self, session_id: str):
-        """Salva a conversa atual em um arquivo JSON."""
+        """
+        Saves the current conversation to a JSON file.
+
+        Args:
+            session_id (str): The unique identifier for the session.
+        """
         filepath = os.path.join(self.persist_directory, f"{session_id}.json")
         try:
             with open(filepath, 'w', encoding='utf-8') as f:
                 json.dump(self.messages, f, ensure_ascii=False, indent=4)
-            logger.info(f"Sessão salva em: {filepath}")
+            logger.info(f"Session saved to: {filepath}")
         except Exception as e:
-            logger.error(f"Erro ao salvar sessão: {e}")
+            logger.error(f"Error saving session: {e}")
 
     def load_session(self, session_id: str):
-        """Carrega uma conversa anterior."""
+        """
+        Loads a previous conversation.
+
+        Args:
+            session_id (str): The unique identifier for the session.
+        """
         filepath = os.path.join(self.persist_directory, f"{session_id}.json")
         if os.path.exists(filepath):
             try:
                 with open(filepath, 'r', encoding='utf-8') as f:
                     self.messages = json.load(f)
-                logger.info(f"Sessão carregada: {session_id} ({len(self.messages)} mensagens)")
+                logger.info(f"Session loaded: {session_id} ({len(self.messages)} messages)")
             except Exception as e:
-                logger.error(f"Erro ao carregar sessão: {e}")
+                logger.error(f"Error loading session: {e}")
         else:
-            logger.warning(f"Sessão não encontrada: {session_id}")
+            logger.warning(f"Session not found: {session_id}")

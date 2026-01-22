@@ -4,9 +4,13 @@ from sentence_transformers.readers import InputExample
 
 class TripletGenerator(ABC):
     """
-    Classe base abstrata para geradores de dados de treinamento (tripletos).
-    Padrão de arquitetura: Strategy Pattern.
+    Abstract base class for training data generators (triplets).
+    Architecture Pattern: Strategy Pattern.
     """
     @abstractmethod
     def generate(self, **kwargs) -> List[InputExample]:
+        """
+        Generates a list of InputExample objects for training.
+        Each InputExample typically contains [anchor, positive, negative].
+        """
         pass

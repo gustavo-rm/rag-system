@@ -5,56 +5,59 @@ from sentence_transformers import SentenceTransformer, losses
 from sentence_transformers.readers import InputExample
 from typing import List
 
+# Logger Configuration
 logger = logging.getLogger(__name__)
 
 
 class EmbeddingTrainer:
     """
-    Gerencia o fine-tuning de modelos de embedding usando a perda MultipleNegativesRankingLoss.
+    Manages embedding model fine-tuning using MultipleNegativesRankingLoss.
 
-    Esta técnica é eficiente pois usa os outros exemplos do batch como "negativos"
-    adicionais, maximizando o aprendizado com menos dados.
+    This technique is efficient because it uses other examples in the batch as additional
+    "negatives", maximizing learning with less data.
     """
 
     def __init__(self, base_model_name: str, batch_size: int = 16, epochs: int = 1):
         """
+        Initializes the trainer.
+
         Args:
-            base_model_name: Modelo HuggingFace para iniciar (ex: 'sentence-transformers/all-MiniLM-L6-v2').
-            batch_size: Tamanho do lote. Maior é melhor para Contrastive Learning, mas exige mais VRAM.
-            epochs: Quantas vezes passar pelos dados. 1 a 3 costuma ser suficiente para poucos dados.
+            base_model_name (str): HuggingFace model to start with (e.g., 'sentence-transformers/all-MiniLM-L6-v2').
+            batch_size (int): Batch size. Larger is better for Contrastive Learning, but requires more VRAM.
+            epochs (int): How many times to pass through the data. 1 to 3 is usually sufficient for small datasets.
         """
         self.base_model_name = base_model_name
         self.batch_size = batch_size
         self.epochs = epochs
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        logger.info(f"🏋️ Trainer inicializado. Device: {self.device.upper()} | Batch: {batch_size}")
+        logger.info(f"🏋️ Trainer initialized. Device: {self.device.upper()} | Batch: {batch_size}")
 
     def train(self, train_examples: List[InputExample], output_path: str):
         """
-        Executa o treinamento.
+        Executes the training loop.
 
         Args:
-            train_examples: Lista de objetos InputExample(texts=[ancora, pos, neg]).
-            output_path: Onde salvar o modelo final.
+            train_examples (List[InputExample]): List of InputExample(texts=[anchor, pos, neg]) objects.
+            output_path (str): Where to save the final model.
         """
         if not train_examples:
-            logger.error("Lista de exemplos vazia. Treinamento abortado.")
+            logger.error("Empty example list. Training aborted.")
             return
 
-        logger.info(f"Carregando modelo base: {self.base_model_name}...")
+        logger.info(f"Loading base model: {self.base_model_name}...")
         model = SentenceTransformer(self.base_model_name, device=self.device)
 
-        # DataLoader prepara os batches
+        # DataLoader prepares the batches
         train_dataloader = DataLoader(train_examples, shuffle=True, batch_size=self.batch_size)
 
-        # A Loss function mágica para RAG
+        # The magic Loss function for RAG
         train_loss = losses.MultipleNegativesRankingLoss(model)
 
-        # Warmup de 10% é prática padrão em Transformers
+        # 10% Warmup is standard practice in Transformers
         warmup_steps = int(len(train_dataloader) * self.epochs * 0.1)
 
-        logger.info(f"Iniciando treinamento por {self.epochs} épocas ({len(train_dataloader)} steps/época)...")
+        logger.info(f"Starting training for {self.epochs} epochs ({len(train_dataloader)} steps/epoch)...")
 
         try:
             model.fit(
@@ -63,12 +66,12 @@ class EmbeddingTrainer:
                 warmup_steps=warmup_steps,
                 output_path=output_path,
                 show_progress_bar=True,
-                use_amp=True if self.device == 'cuda' else False  # Automatic Mixed Precision (acelera na GPU)
+                use_amp=True if self.device == 'cuda' else False  # Automatic Mixed Precision (accelerates on GPU)
             )
-            logger.info(f"🎉 Treinamento concluído com sucesso!")
-            logger.info(f"Modelo salvo em: {output_path}")
-            logger.info("Dica: Atualize seu 'main.py' para apontar o Embedder para este caminho.")
+            logger.info(f"🎉 Training successfully completed!")
+            logger.info(f"Model saved to: {output_path}")
+            logger.info("Tip: Update your 'main.py' to point the Embedder to this path.")
 
         except Exception as e:
-            logger.critical(f"Falha durante o treinamento: {e}")
+            logger.critical(f"Failure during training: {e}")
             raise e

@@ -6,11 +6,11 @@ import torch
 
 from src.utils.logger import setup_logging
 
-# --- Configuração de Logging ---
+# --- Logging Configuration ---
 setup_logging()
 logger = logging.getLogger(__name__)
 
-# Importações dos módulos v3
+# Import v3 modules
 from src.components.llm import LLM
 from src.ingestion.pdf_processor import PDFProcessor
 from src.ingestion.chunker import Chunker
@@ -19,24 +19,39 @@ from src.training.trainer import EmbeddingTrainer
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Pipeline de Fine-Tuning de Embeddings (RAG v3)")
+    """
+    Main entry point for the Embedding Fine-Tuning Pipeline (RAG v3).
 
-    # Parâmetros de Entrada
+    This script allows fine-tuning an embedding model using either an existing dataset (file mode)
+    or synthetic data generated from a PDF document (synthetic mode).
+
+    Usage:
+        python train_embedding.py --mode synthetic --input data/pdfs/manual.pdf --num_gen 50 --epochs 3
+        python train_embedding.py --mode file --input data/dataset.json --epochs 3
+    """
+    parser = argparse.ArgumentParser(description="Embedding Fine-Tuning Pipeline (RAG v3)")
+
+    # Input Parameters
     parser.add_argument('--mode', choices=['file', 'synthetic'], required=True,
-                        help="Fonte dos dados: arquivo JSON ou geração sintética via LLM.")
+                        help="Data source: 'file' for JSON dataset or 'synthetic' for LLM generation.")
     parser.add_argument('--input', type=str, required=True,
-                        help="Caminho do PDF (modo synthetic) ou JSON (modo file).")
+                        help="Path to PDF (synthetic mode) or JSON (file mode).")
 
-    # Parâmetros de Treino
-    parser.add_argument('--base_model', type=str, default='paraphrase-multilingual-mpnet-base-v2')
-    parser.add_argument('--output_dir', type=str, default='models/finetuned_v3')
-    parser.add_argument('--epochs', type=int, default=3)
-    parser.add_argument('--batch_size', type=int, default=16)
-    parser.add_argument('--num_gen', type=int, default=50, help="Qtd de exemplos sintéticos a gerar.")
+    # Training Parameters
+    parser.add_argument('--base_model', type=str, default='paraphrase-multilingual-mpnet-base-v2',
+                        help="Base model to fine-tune.")
+    parser.add_argument('--output_dir', type=str, default='models/finetuned_v3',
+                        help="Directory to save the fine-tuned model.")
+    parser.add_argument('--epochs', type=int, default=3,
+                        help="Number of training epochs.")
+    parser.add_argument('--batch_size', type=int, default=16,
+                        help="Batch size for training.")
+    parser.add_argument('--num_gen', type=int, default=50,
+                        help="Number of synthetic examples to generate (only for synthetic mode).")
 
     args = parser.parse_args()
 
-    # 1. GERAÇÃO DE DADOS
+    # 1. DATA GENERATION
     train_examples = []
 
     if args.mode == 'file':
@@ -45,48 +60,48 @@ def main():
 
     elif args.mode == 'synthetic':
         if not os.path.exists(args.input):
-            logger.error(f"PDF não encontrado: {args.input}")
+            logger.error(f"PDF not found: {args.input}")
             return
 
-        logger.info("Preparando Ingestão para geração sintética...")
+        logger.info("Preparing Ingestion for synthetic generation...")
 
-        # Pipeline de Ingestão v3
+        # Ingestion Pipeline v3
         processor = PDFProcessor(args.input)
         text = processor.extract_text()
 
-        # Usamos chunks menores (384) para treino, pois o modelo MPNet tem limite de 384 tokens
+        # Use smaller chunks (384) for training, as MPNet has a limit of 384 tokens
         chunker = Chunker(chunk_size=384, chunk_overlap=0)
         chunks = chunker.chunk_text(text)
 
-        logger.info(f"Texto quebrado em {len(chunks)} trechos.")
+        logger.info(f"Text broken into {len(chunks)} chunks.")
 
-        # Carrega LLM Local (Phi-3 é ótimo para gerar perguntas rápidas)
+        # Load Local LLM (Phi-3 is great for generating quick questions)
         llm = LLM(method='local', model_name='microsoft/Phi-3-mini-4k-instruct')
 
         generator = SyntheticTripletGenerator(llm=llm, num_examples=args.num_gen)
         train_examples = generator.generate(chunks=chunks)
 
     # ==============================================================================
-    # 🕵️ CORREÇÃO DE MEMÓRIA (Adicione este bloco ANTES de verificar train_examples)
+    # 🕵️ MEMORY CORRECTION (Add this block BEFORE checking train_examples)
     # ==============================================================================
     if args.mode == 'synthetic':
-        logger.info("🧹 Limpando LLM da memória para liberar VRAM para o treino...")
+        logger.info("🧹 Cleaning LLM from memory to free VRAM for training...")
 
-        # 1. Deleta as referências aos objetos pesados
+        # 1. Delete references to heavy objects
         del llm
         del generator
 
-        # 2. Força o Python a limpar a memória RAM
+        # 2. Force Python to clean RAM
         gc.collect()
 
-        # 3. Força o PyTorch a limpar a memória da GPU
+        # 3. Force PyTorch to clean GPU memory
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-        logger.info(f"Memória VRAM liberada. Memória alocada atual: {torch.cuda.memory_allocated() / 1024 ** 2:.2f} MB")
+        logger.info(f"VRAM memory freed. Current allocated memory: {torch.cuda.memory_allocated() / 1024 ** 2:.2f} MB")
     # ==============================================================================
 
-    # 2. TREINAMENTO
+    # 2. TRAINING
     if train_examples:
         trainer = EmbeddingTrainer(
             base_model_name=args.base_model,
@@ -96,7 +111,7 @@ def main():
 
         trainer.train(train_examples, output_path=args.output_dir)
     else:
-        logger.warning("Nenhum dado gerado. Encerrando.")
+        logger.warning("No data generated. Exiting.")
 
 
 if __name__ == "__main__":
