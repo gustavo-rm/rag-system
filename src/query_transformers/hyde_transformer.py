@@ -2,33 +2,54 @@ from typing import List
 from .base import QueryTransformer
 from src.components.llm import LLM
 import logging
-# Configuração de Logger
+# Logger Configuration
 logger = logging.getLogger(__name__)
 
 
 class HyDETransformer(QueryTransformer):
-    """Transforma a consulta gerando um documento hipotético (HyDE)."""
+    """
+    Transforms the query by generating a Hypothetical Document (HyDE).
+
+    HyDE (Hypothetical Document Embeddings) improves retrieval by generating
+    a fake but semantically relevant document answer, which is then used
+    for similarity search instead of the raw question.
+    """
 
     def __init__(self, llm: LLM):
+        """
+        Initializes the HyDE transformer.
+
+        Args:
+            llm (LLM): The Language Model used to generate the hypothetical document.
+        """
         self.llm = llm
         self.prompt_template = """
-        Escreva um breve trecho técnico que responda à pergunta abaixo. 
-        Não responda a pergunta diretamente, mas simule como seria o texto em um manual técnico que contém a resposta.
-        Pergunta: {question}
-        Passagem do manual:
+        Write a brief technical excerpt that answers the question below.
+        Do not answer the question directly, but simulate what the text in a technical manual containing the answer would look like.
+        Question: {question}
+        Manual passage:
         """
 
     def transform(self, query: str) -> List[str]:
-        logger.info(f"⚡ HyDE: Gerando documento hipotético para: '{query}'")
+        """
+        Generates a hypothetical document and returns it along with the original query.
+
+        Args:
+            query (str): The original user query.
+
+        Returns:
+            List[str]: A list containing the original query and the hypothetical document.
+        """
+        logger.info(f"⚡ HyDE: Generating hypothetical document for: '{query}'")
 
         hypothetical_doc = self.llm.generate_response(
             prompt=self.prompt_template.format(question=query),
-            system_prompt="Você é um gerador de dados sintéticos para RAG.",
+            system_prompt="You are a synthetic data generator for RAG.",
             temperature=0.4,
             max_new_tokens=120
         )
 
-        # Retorna a Query Original E o Documento Hipotético.
-        # O HybridRetriever vai buscar ambos. A query pega palavras-chave exatas (BM25).
-        # O HyDE pega a similaridade semântica (Vetor).
+        # Returns the Original Query AND the Hypothetical Document.
+        # The HybridRetriever will search for both. The query catches exact keywords (BM25).
+        # HyDE catches semantic similarity (Vector).
         return [query, hypothetical_doc]

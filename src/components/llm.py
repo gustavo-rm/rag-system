@@ -8,12 +8,12 @@ from transformers import (
     PreTrainedTokenizer
 )
 
-# Configuração de logging
+# Logger configuration
 logger = logging.getLogger(__name__)
 
 
 class LLMGenerationError(Exception):
-    """Exceção personalizada lançada quando ocorre qualquer falha crítica na geração de texto."""
+    """Custom exception raised when any critical failure occurs in text generation."""
     pass
 
 
@@ -31,146 +31,146 @@ DEFAULT_CONTEXT_WINDOW = 4000
 
 class LLM:
     """
-    Interface unificada e otimizada para geração de texto usando LLMs Locais (Hugging Face) ou API (OpenAI).
+    Unified and optimized interface for text generation using Local LLMs (Hugging Face) or API (OpenAI).
 
-    Esta classe implementa o padrão Facade para abstrair a complexidade de:
-    1. Carregamento de modelos (Local vs API).
-    2. Gerenciamento de memória (Quantização 4-bit automática).
-    3. Compatibilidade (Correção de tokenizers e Remote Code).
-    4. Resiliência (Fallback de cache em caso de erro).
+    This class implements the Facade pattern to abstract the complexity of:
+    1. Model loading (Local vs API).
+    2. Memory management (Automatic 4-bit quantization).
+    3. Compatibility (Tokenizer corrections and Remote Code).
+    4. Resilience (Cache fallback in case of error).
 
     Attributes:
-        method (str): O método de execução ('local' ou 'openai').
-        model_name (str): O identificador do modelo em uso.
-        context_window (int): O limite máximo de tokens (entrada + saída).
-        device (str): Dispositivo de execução ('cuda' ou 'cpu').
+        method (str): The execution method ('local' or 'openai').
+        model_name (str): The identifier of the model in use.
+        context_window (int): The maximum token limit (input + output).
+        device (str): Execution device ('cuda' or 'cpu').
     """
 
     def __init__(self, method: str = 'local', model_name: Optional[str] = None,
                  api_key: Optional[str] = None, context_window: int = DEFAULT_CONTEXT_WINDOW):
         """
-        Inicializa a instância do LLM com configuração automática baseada no ambiente.
+        Initializes the LLM instance with automatic configuration based on the environment.
 
         Args:
-            method (str): 'local' (GPU/CPU) ou 'openai' (API).
-            model_name (str, optional): ID do Hugging Face ou OpenAI. Se None, usa DEFAULTs.
-            api_key (str, optional): Obrigatório se method='openai'.
-            context_window (int): Limite de tokens de segurança.
+            method (str): 'local' (GPU/CPU) or 'openai' (API).
+            model_name (str, optional): Hugging Face or OpenAI ID. If None, uses DEFAULTs.
+            api_key (str, optional): Required if method='openai'.
+            context_window (int): Safety token limit.
 
         Raises:
-            ImportError: Se method='openai' e a lib não estiver instalada.
-            ValueError: Se parâmetros obrigatórios (ex: api_key) estiverem faltando.
-            RuntimeError: Se houver falha crítica ao carregar o modelo local.
+            ImportError: If method='openai' and the lib is not installed.
+            ValueError: If mandatory parameters (e.g., api_key) are missing.
+            RuntimeError: If there is a critical failure loading the local model.
         """
         self.method = method
         self.model_name = model_name
         self.context_window = context_window
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        # Roteamento de inicialização
+        # Initialization routing
         if method == 'openai':
             self._setup_openai(api_key)
         elif method == 'local':
             self._setup_local_model()
         else:
-            raise ValueError(f"Método '{method}' inválido. Escolha 'local' ou 'openai'.")
+            raise ValueError(f"Invalid method '{method}'. Choose 'local' or 'openai'.")
 
     def _setup_openai(self, api_key: str) -> None:
         """
-        Configura o cliente OpenAI.
+        Configures the OpenAI client.
 
         Args:
-            api_key (str): Chave de autenticação da OpenAI.
+            api_key (str): OpenAI authentication key.
 
         Raises:
-            ImportError: Caso a biblioteca `openai` não esteja instalada.
-            ValueError: Caso a api_key seja vazia ou nula.
+            ImportError: If the `openai` library is missing.
+            ValueError: If api_key is empty or null.
         """
         if not OpenAI:
-            raise ImportError("Biblioteca 'openai' ausente. Instale com: pip install openai")
+            raise ImportError("Missing 'openai' library. Install with: pip install openai")
         if not api_key:
-            raise ValueError("O parâmetro 'api_key' é obrigatório para o método 'openai'.")
+            raise ValueError("The 'api_key' parameter is required for the 'openai' method.")
 
         self.client = OpenAI(api_key=api_key)
         self.model_name = self.model_name or DEFAULT_OPENAI_MODEL
-        logger.info(f"☁️ LLM OpenAI pronto: {self.model_name}")
+        logger.info(f"☁️ OpenAI LLM ready: {self.model_name}")
 
     def _setup_local_model(self) -> None:
         """
-        Orquestra o carregamento do modelo local, decidindo estratégias de quantização
-        e correções de compatibilidade dinamicamente.
+        Orchestrates local model loading, deciding quantization strategies
+        and compatibility fixes dynamically.
 
         Raises:
-            RuntimeError: Se ocorrer qualquer erro durante o carregamento do Tokenizer ou do Modelo (ex: falta de VRAM, conexão).
+            RuntimeError: If any error occurs during Tokenizer or Model loading (e.g., lack of VRAM, connection).
         """
         self.model_name = self.model_name or DEFAULT_LOCAL_MODEL
-        logger.info(f"🖥️ Preparando LLM Local '{self.model_name}' em: {self.device.upper()}")
+        logger.info(f"🖥️ Preparing Local LLM '{self.model_name}' on: {self.device.upper()}")
 
         if self.device == "cpu":
-            logger.warning("⚠️ ALERTA DE PERFORMANCE: Rodar LLM na CPU será significativamente lento.")
+            logger.warning("⚠️ PERFORMANCE ALERT: Running LLM on CPU will be significantly slow.")
 
         try:
-            # 1. Carrega Tokenizer
+            # 1. Load Tokenizer
             self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
             self._fix_tokenizer_padding()
 
-            # 2. Constrói os argumentos de carregamento (Factory Method)
+            # 2. Build loading arguments (Factory Method)
             loader_kwargs = self._build_loader_kwargs()
 
-            # 3. Carrega o Modelo
+            # 3. Load Model
             self.model = AutoModelForCausalLM.from_pretrained(
                 self.model_name,
-                **loader_kwargs  # Desempacota os argumentos dinâmicos
+                **loader_kwargs  # Unpack dynamic arguments
             )
 
-            logger.info("✅ Modelo local carregado com sucesso.")
+            logger.info("✅ Local model loaded successfully.")
 
         except Exception as e:
-            logger.error(f"❌ Erro fatal ao carregar modelo: {e}")
-            raise RuntimeError(f"Falha crítica ao carregar modelo local: {e}") from e
+            logger.error(f"❌ Fatal error loading model: {e}")
+            raise RuntimeError(f"Critical failure loading local model: {e}") from e
 
-    # --- Métodos Auxiliares de Configuração (Modularização) ---
+    # --- Configuration Helper Methods (Modularization) ---
 
     def _build_loader_kwargs(self) -> Dict[str, Any]:
         """
-        Constrói o dicionário de configurações (kwargs) para o `from_pretrained`.
+        Builds the configuration dictionary (kwargs) for `from_pretrained`.
 
-        Isola a lógica de decisão:
-        - Se for Unsloth/BNB: Não passa config de quantização (usa a nativa).
-        - Se for modelo cru: Cria config BitsAndBytes.
-        - Se for Phi-3/Falcon: Ativa trust_remote_code.
+        Isolates the decision logic:
+        - If Unsloth/BNB: Do not pass quantization config (use native).
+        - If Raw Model: Create BitsAndBytes config.
+        - If Phi-3/Falcon: Activate trust_remote_code.
 
         Returns:
-            Dict[str, Any]: Um dicionário contendo parâmetros como `device_map`, `quantization_config`, etc.
+            Dict[str, Any]: A dictionary containing parameters like `device_map`, `quantization_config`, etc.
         """
         kwargs = {}
 
-        # 1. Configuração por Tipo de Hardware
+        # 1. Hardware Type Configuration
         if self.device == "cuda":
-            # --- CORREÇÃO CRÍTICA PARA GPU DE 8GB ---
-            # Força o modelo inteiro na GPU 0.
-            # "auto" pode tentar jogar pedaços para a CPU, o que quebra modelos BNB 4-bit.
+            # --- CRITICAL FIX FOR 8GB GPU ---
+            # Forces the entire model onto GPU 0.
+            # "auto" might try to offload pieces to CPU, which breaks BNB 4-bit models.
             kwargs["device_map"] = {"": 0}
 
-            # Lógica de Quantização (Exclusiva de GPU)
+            # Quantization Logic (GPU Exclusive)
             if self._is_pre_quantized():
-                # Caso 1: Unsloth/BNB (Já vem pronto)
-                logger.info("⚡ Modelo pré-quantizado detectado. Usando config nativa.")
+                # Case 1: Unsloth/BNB (Ready to use)
+                logger.info("⚡ Pre-quantized model detected. Using native config.")
             else:
-                # Caso 2: Modelo Cru (Precisa comprimir agora)
-                logger.info("🔧 Aplicando quantização 4-bit on-the-fly...")
+                # Case 2: Raw Model (Need to compress now)
+                logger.info("🔧 Applying 4-bit on-the-fly quantization...")
                 kwargs["quantization_config"] = self._get_bnb_config()
 
         else:
-            # Fallback para CPU (Lento, mas funcional para testes sem quantização BNB)
+            # Fallback for CPU (Slow, but functional for testing without BNB quantization)
             kwargs["device_map"] = "auto"
 
-        # 2. Configuração Específica do Modelo (Remote Code / Atenção)
+        # 2. Model Specific Configuration (Remote Code / Attention)
         if self._needs_remote_code():
-            logger.warning(f"🛡️ Ativando 'trust_remote_code' para {self.model_name}")
+            logger.warning(f"🛡️ Activating 'trust_remote_code' for {self.model_name}")
             kwargs["trust_remote_code"] = True
 
-            # Correção específica para Phi-3 e transformers novos
+            # Specific fix for Phi-3 and new transformers
             if "Phi-3" in self.model_name:
                 kwargs["attn_implementation"] = "eager"
 
@@ -178,31 +178,31 @@ class LLM:
 
     def _needs_remote_code(self) -> bool:
         """
-        Verifica se o modelo requer execução de código remoto (ex: arquiteturas novas).
+        Checks if the model requires remote code execution (e.g., new architectures).
 
         Returns:
-            bool: True se o modelo estiver na lista de arquiteturas que exigem `trust_remote_code`.
+            bool: True if the model is in the list of architectures requiring `trust_remote_code`.
         """
         keywords = ["Phi-3", "falcon", "mpt", "glm"]
         return any(k in self.model_name for k in keywords)
 
     def _is_pre_quantized(self) -> bool:
         """
-        Detecta se o modelo já possui pesos quantizados.
+        Detects if the model already has quantized weights.
 
         Returns:
-            bool: True se o nome do modelo indicar quantização (bnb-4bit, awq, gptq).
+            bool: True if the model name indicates quantization (bnb-4bit, awq, gptq).
         """
-        # Unsloth usa 'bnb-4bit', outros usam 'awq', 'gptq'
+        # Unsloth uses 'bnb-4bit', others use 'awq', 'gptq'
         indicators = ["bnb-4bit", "awq", "gptq", "-quantized"]
         return any(i in self.model_name.lower() for i in indicators)
 
     def _get_bnb_config(self) -> BitsAndBytesConfig:
         """
-        Gera a configuração padrão de quantização 4-bit (NF4).
+        Generates default 4-bit (NF4) quantization configuration.
 
         Returns:
-            BitsAndBytesConfig: Objeto de configuração para injeção no `from_pretrained`.
+            BitsAndBytesConfig: Configuration object for injection into `from_pretrained`.
         """
         return BitsAndBytesConfig(
             load_in_4bit=True,
@@ -212,29 +212,29 @@ class LLM:
         )
 
     def _fix_tokenizer_padding(self) -> None:
-        """Garante que o tokenizer tenha um token de pad (evita erros de geração)."""
+        """Ensures the tokenizer has a pad token (avoids generation errors)."""
         if self.tokenizer.pad_token_id is None:
             self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
 
-    # --- Geração de Texto ---
+    # --- Text Generation ---
 
     def generate_response(self, prompt: str, system_prompt: str, max_new_tokens: int = 512,
                           temperature: float = 0.1, use_cache: bool = True) -> str:
         """
-        Gera uma resposta textual. Atua como Dispatcher para Local ou OpenAI.
+        Generates a textual response. Acts as a Dispatcher for Local or OpenAI.
 
         Args:
-            prompt (str): Entrada do usuário.
-            system_prompt (str): Instruções do sistema.
-            max_new_tokens (int): Limite de tokens a gerar.
-            temperature (float): Criatividade (0.0 a 1.0).
-            use_cache (bool): Ativa o cache KV para velocidade (True) ou desativa para economia de VRAM (False).
+            prompt (str): User input.
+            system_prompt (str): System instructions.
+            max_new_tokens (int): Limit of tokens to generate.
+            temperature (float): Creativity (0.0 to 1.0).
+            use_cache (bool): Activates KV cache for speed (True) or deactivates for VRAM saving (False).
 
         Returns:
-            str: O texto gerado pelo modelo, limpo e sem tokens especiais.
+            str: The generated text, cleaned and without special tokens.
 
         Raises:
-            LLMGenerationError: Wrapper para qualquer exceção que ocorra durante a inferência (rede ou local).
+            LLMGenerationError: Wrapper for any exception that occurs during inference (network or local).
         """
         try:
             if self.method == 'openai':
@@ -242,15 +242,21 @@ class LLM:
             elif self.method == 'local':
                 return self._generate_local(prompt, system_prompt, max_new_tokens, temperature, use_cache)
         except Exception as e:
-            logger.error(f"Erro na geração ({self.method}): {str(e)}")
-            raise LLMGenerationError(f"Falha na geração de texto: {str(e)}") from e
+            logger.error(f"Generation error ({self.method}): {str(e)}")
+            raise LLMGenerationError(f"Text generation failure: {str(e)}") from e
 
     def _generate_openai(self, prompt: str, system_prompt: str, max_tokens: int, temperature: float) -> str:
         """
-        Executa a geração via API da OpenAI.
+        Executes generation via OpenAI API.
+
+        Args:
+            prompt (str): User prompt.
+            system_prompt (str): System prompt.
+            max_tokens (int): Max tokens.
+            temperature (float): Temperature.
 
         Returns:
-            str: Conteúdo da resposta da API.
+            str: API response content.
         """
         response = self.client.chat.completions.create(
             model=self.model_name,
@@ -266,23 +272,23 @@ class LLM:
     def _generate_local(self, prompt: str, system_prompt: str, max_new_tokens: int, temperature: float,
                         use_cache: bool) -> str:
         """
-        Executa a inferência local com tratamento de erros de compatibilidade de cache.
+        Executes local inference with cache compatibility error handling.
 
         Args:
-            prompt (str): Prompt do usuário.
-            system_prompt (str): Prompt do sistema.
-            max_new_tokens (int): Tokens máximos de saída.
-            temperature (float): Temperatura de amostragem.
-            use_cache (bool): Se True, usa cache KV.
+            prompt (str): User prompt.
+            system_prompt (str): System prompt.
+            max_new_tokens (int): Max output tokens.
+            temperature (float): Sampling temperature.
+            use_cache (bool): If True, uses KV cache.
 
         Returns:
-            str: Texto decodificado.
+            str: Decoded text.
 
         Raises:
-            ValueError: Se o tamanho total (entrada + saída) exceder a janela de contexto.
-            AttributeError/RuntimeError: Se houver falha na biblioteca transformers (relançado após tentativas).
+            ValueError: If total size (input + output) exceeds context window.
+            AttributeError/RuntimeError: If transformers library failure occurs (rethrown after attempts).
         """
-        # 1. Formata o prompt
+        # 1. Formats the prompt
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt},
@@ -297,13 +303,13 @@ class LLM:
 
         input_len = prompt_ids.shape[1]
 
-        # 2. Verificação de Janela
+        # 2. Window Verification
         if input_len + max_new_tokens > self.context_window:
-            msg = f"Prompt muito longo ({input_len}). Limite: {self.context_window}"
+            msg = f"Prompt too long ({input_len}). Limit: {self.context_window}"
             logger.error(msg)
             raise ValueError(msg)
 
-        # 3. Geração com Retry (Fallback)
+        # 3. Generation with Retry (Fallback)
         try:
             with torch.no_grad():
                 outputs = self.model.generate(
@@ -317,9 +323,9 @@ class LLM:
                     use_cache=use_cache
                 )
         except AttributeError as e:
-            # Captura erro de compatibilidade 'seen_tokens' (comum no Phi-3 + Transformers novos)
+            # Captures 'seen_tokens' compatibility error (common in Phi-3 + new Transformers)
             if "seen_tokens" in str(e) and use_cache:
-                logger.warning("⚠️ Erro de Cache detectado. Tentando fallback com use_cache=False...")
+                logger.warning("⚠️ Cache Error detected. Attempting fallback with use_cache=False...")
                 with torch.no_grad():
                     outputs = self.model.generate(
                         prompt_ids,
@@ -328,11 +334,11 @@ class LLM:
                         temperature=temperature,
                         pad_token_id=self.tokenizer.pad_token_id,
                         eos_token_id=self.tokenizer.eos_token_id,
-                        use_cache=False  # Desativa cache no retry
+                        use_cache=False  # Deactivates cache on retry
                     )
             else:
-                raise e  # Repassa se for outro erro
+                raise e  # Rethrow if it's another error
 
-        # 4. Decodificação
+        # 4. Decoding
         generated_ids = outputs[0][input_len:]
         return self.tokenizer.decode(generated_ids, skip_special_tokens=True).strip()

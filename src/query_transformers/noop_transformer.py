@@ -1,12 +1,25 @@
 from typing import List
 from .base import QueryTransformer
 import logging
-# Configuração de Logger
+# Logger Configuration
 logger = logging.getLogger(__name__)
 
 
 class NoOpTransformer(QueryTransformer):
-    """Uma implementação que não faz nada. Retorna a consulta original."""
+    """
+    An implementation that does nothing. Returns the original query.
+    Used when the query is simple and specific enough.
+    """
+
     def transform(self, query: str) -> List[str]:
-        logger.info("Usando estratégia: Nenhuma Transformação (No-Op).")
+        """
+        Returns the original query wrapped in a list.
+
+        Args:
+            query (str): The original user query.
+
+        Returns:
+            List[str]: A list containing only the original query.
+        """
+        logger.info("Using strategy: No Transformation (No-Op).")
         return [query]

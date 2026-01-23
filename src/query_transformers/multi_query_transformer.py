@@ -4,38 +4,51 @@ import re
 from .base import QueryTransformer
 from src.components.llm import LLM
 
-# Configuração de Logger
+# Logger Configuration
 logger = logging.getLogger(__name__)
 
 
 class MultiQueryTransformer(QueryTransformer):
     """
-    Transforma a consulta gerando múltiplas variações para aumentar a revocação (recall).
-    Inclui proteções contra excesso de variações para manter a performance.
-    Especializado em manter o idioma Português e expandir sinônimos.
+    Transforms the query by generating multiple variations to increase recall.
+    Includes safeguards against excessive variations to maintain performance.
+    Specialized in maintaining Portuguese language and expanding synonyms.
     """
 
     def __init__(self, llm: LLM, num_queries: int = 3):
+        """
+        Initializes the MultiQueryTransformer.
+
+        Args:
+            llm (LLM): The Language Model used to generate query variations.
+            num_queries (int): The number of variations to generate.
+        """
         self.llm = llm
         self.num_queries = num_queries
-        # Prompt otimizado para instruir o modelo a não numerar, mas há uma regex caso ele numere.
+        # Optimized prompt to instruct the model not to number, but there is a regex in case it does.
         self.prompt_template = """
-            Você é um assistente de IA especialista em buscas geográficas e factuais em PORTUGUÊS.
-            Sua tarefa é gerar {num} variações da pergunta do usuário para encontrar a resposta em documentos técnicos.
+            You are an AI assistant expert in geographical and factual searches in PORTUGUESE.
+            Your task is to generate {num} variations of the user's question to find the answer in technical documents.
 
-            Regras OBRIGATÓRIAS:
-            1. Responda APENAS em PORTUGUÊS DO BRASIL.
-            2. Use sinônimos técnicos. (Ex: "maior montanha" -> "ponto culminante", "pico mais alto", "altitude máxima").
-            3. NÃO responda à pergunta. Apenas reescreva as variações.
-            4. NÃO escreva introduções como "Aqui estão as variações". Retorne APENAS as perguntas, uma por linha.
+            MANDATORY Rules:
+            1. Answer ONLY in BRAZILIAN PORTUGUESE.
+            2. Use technical synonyms. (Ex: "biggest mountain" -> "highest point", "highest peak", "maximum altitude").
+            3. Do NOT answer the question. Just rewrite the variations.
+            4. Do NOT write introductions like "Here are the variations". Return ONLY the questions, one per line.
 
-            Pergunta Original: "{question}"
+            Original Question: "{question}"
             """
 
     def _sanitize_response(self, response_text: str) -> List[str]:
         """
-        Método auxiliar para limpar a saída 'suja' do LLM.
-        Remove numeração (1., 2.), bullets (-, *), aspas e linhas vazias.
+        Helper method to clean 'dirty' LLM output.
+        Removes numbering (1., 2.), bullets (-, *), quotes, and empty lines.
+
+        Args:
+            response_text (str): The raw text response from the LLM.
+
+        Returns:
+            List[str]: A list of cleaned query strings.
         """
         cleaned = []
         lines = response_text.split('\n')
@@ -43,57 +56,63 @@ class MultiQueryTransformer(QueryTransformer):
         for line in lines:
             line = line.strip()
 
-            # Pula linhas vazias
+            # Skips empty lines
             if not line:
                 continue
 
             # Regex:
-            # ^ : Começo da linha
-            # [\d\-\*\•]+ : Qualquer combinação de dígitos, hífens, asteriscos ou bullets
-            # [\.\)\s]* : Seguido opcionalmente de ponto, parêntese ou espaços
-            # Ex: Remove "1.", "1 -", "- ", "* ", "2)"
+            # ^ : Start of line
+            # [\d\-\*\•]+ : Any combination of digits, hyphens, asterisks, or bullets
+            # [\.\)\s]* : Optionally followed by dot, parenthesis, or spaces
+            # Ex: Removes "1.", "1 -", "- ", "* ", "2)"
             line = re.sub(r'^[\d\-\*\•]+[\.\)\s]*', '', line)
 
-            # Remove aspas extras que modelos gostam de colocar
+            # Removes extra quotes that models like to add
             line = line.strip('"\'')
 
-            if len(line) > 5:  # Ignora linhas muito curtas/lixo
+            if len(line) > 5:  # Ignores very short lines/garbage
                 cleaned.append(line)
 
         return cleaned
 
     def transform(self, query: str) -> List[str]:
         """
-        Gera variações e garante que a query original seja a primeira.
+        Generates variations and ensures the original query is the first one.
+
+        Args:
+            query (str): The original user query.
+
+        Returns:
+            List[str]: A list of queries starting with the original, followed by variations.
         """
-        logger.info(f"⚡ MultiQuery: Gerando variações para: '{query}'")
+        logger.info(f"⚡ MultiQuery: Generating variations for: '{query}'")
 
         try:
             response = self.llm.generate_response(
                 prompt=self.prompt_template.format(num=self.num_queries, question=query),
-                system_prompt="Gerador de variações de busca em Português.",
+                system_prompt="Generator of search variations in Portuguese.",
                 max_new_tokens=150,
                 temperature=0.5
             )
 
-            # 1. Limpeza
+            # 1. Cleaning
             variations = self._sanitize_response(response)
 
-            # 2. Guardrail de Quantidade
-            # Pega apenas as 'num_queries' primeiras variações, ignorando o resto
-            # para proteger a performance do Retriever.
+            # 2. Quantity Guardrail
+            # Takes only the first 'num_queries' variations, ignoring the rest
+            # to protect Retriever performance.
             limited_variations = variations[:self.num_queries]
 
             if not limited_variations:
-                logger.warning("MultiQuery não gerou variações válidas. Usando apenas original.")
+                logger.warning("MultiQuery did not generate valid variations. Using only original.")
                 return [query]
 
-            logger.info(f"Variações geradas: {limited_variations}")
+            logger.info(f"Generated variations: {limited_variations}")
 
-            # Retorna [Original] + [Variações Limitadas]
-            # A original sempre vai primeiro pois é a intenção real do usuário
+            # Returns [Original] + [Limited Variations]
+            # The original always goes first as it is the user's real intent
             return [query] + limited_variations
 
         except Exception as e:
-            logger.error(f"Erro no MultiQueryTransformer: {e}. Retornando query original.")
+            logger.error(f"Error in MultiQueryTransformer: {e}. Returning original query.")
             return [query]

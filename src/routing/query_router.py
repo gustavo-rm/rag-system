@@ -4,83 +4,83 @@ from typing import Dict, Optional
 from src.components.llm import LLM
 from src.query_transformers import QueryTransformer
 
-# Configuração do Logger para este módulo
+# Logger Configuration for this module
 logger = logging.getLogger(__name__)
 
 
 class QueryRouter:
     """
-    Roteador Semântico de Consultas (Semantic Query Router).
+    Semantic Query Router.
 
-    Esta classe analisa a intenção da pergunta do usuário e decide dinamicamente
-    qual estratégia de RAG (Retrieval-Augmented Generation) deve ser ativada.
+    This class analyzes the user's question intent and dynamically decides
+    which RAG (Retrieval-Augmented Generation) strategy should be activated.
 
-    Mecanismo de Decisão:
-    1. **Heurística Rápida:** Verifica características simples (tamanho, padrões) para decisão imediata.
-    2. **Análise Semântica (LLM):** Envia a pergunta para o LLM com instruções Few-Shot para classificação.
+    Decision Mechanism:
+    1. **Fast Heuristics:** Checks simple characteristics (length, patterns) for immediate decision.
+    2. **Semantic Analysis (LLM):** Sends the question to the LLM with Few-Shot instructions for classification.
 
     Attributes:
-        llm (LLM): Instância do modelo de linguagem usado para a classificação.
-        strategies (Dict[str, QueryTransformer]): Mapeamento de nomes ('noop', 'hyde') para instâncias.
+        llm (LLM): Instance of the language model used for classification.
+        strategies (Dict[str, QueryTransformer]): Mapping of strategy names ('noop', 'hyde') to instances.
     """
 
     def __init__(self, llm: LLM, strategies: Dict[str, QueryTransformer]):
         """
-        Inicializa o Roteador.
+        Initializes the Router.
 
         Args:
-            llm (LLM): O cérebro que decidirá a rota em casos complexos.
-            strategies (Dict[str, QueryTransformer]): As ferramentas disponíveis.
+            llm (LLM): The brain that will decide the route in complex cases.
+            strategies (Dict[str, QueryTransformer]): The available tools.
         """
         self.llm = llm
         self.strategies = strategies
 
-        # Critérios detalhados para guiar o LLM
+        # Detailed criteria to guide the LLM
         self.criteria = {
-            "noop": "Use APENAS para perguntas extremamente específicas que contenham identificadores exatos (CNPJ, IDs, Códigos, Logs) e que não precisem de expansão.",
-            "hyde": "Use para perguntas complexas, abstratas, pedidos de 'Como funciona', 'Por que', ou definições teóricas que exigem raciocínio.",
-            "multi_query": "A MELHOR OPÇÃO para perguntas curtas, factuais ('Qual é...', 'Quem foi...'), geográficas ou vagas. Use sempre que houver sinônimos possíveis."
+            "noop": "Use ONLY for extremely specific questions containing exact identifiers (IDs, Codes, Logs) that do not need expansion.",
+            "hyde": "Use for complex, abstract questions, 'How does it work', 'Why', or theoretical definitions requiring reasoning.",
+            "multi_query": "THE BEST OPTION for short, factual questions ('What is...', 'Who was...'), geographical, or vague queries. Use whenever synonyms are possible."
         }
 
-        logger.info(f"📍 QueryRouter inicializado com estratégias: {list(self.strategies.keys())}")
+        logger.info(f"📍 QueryRouter initialized with strategies: {list(self.strategies.keys())}")
 
     def route(self, question: str) -> QueryTransformer:
         """
-        Seleciona a estratégia de transformação mais adequada para a pergunta.
+        Selects the most appropriate transformation strategy for the question.
 
-        Atua como um orquestrador (facade), delegando a decisão para heurísticas
-        ou para o LLM, e retornando o objeto transformador correspondente.
+        Acts as an orchestrator (facade), delegating the decision to heuristics
+        or the LLM, and returning the corresponding transformer object.
 
         Args:
-            question (str): A pergunta original do usuário.
+            question (str): The original user question.
 
         Returns:
-            QueryTransformer: A instância da estratégia escolhida. Retorna 'noop' em caso de falha.
+            QueryTransformer: The chosen strategy instance. Returns 'noop' in case of failure.
         """
-        # 1. Tenta decisão rápida (Heurística)
+        # 1. Attempt fast decision (Heuristics)
         heuristic_choice = self._check_heuristics(question)
         if heuristic_choice:
-            logger.info(f"⚡ Roteador (Heurística): Decisão rápida tomada -> '{heuristic_choice.upper()}'")
+            logger.info(f"⚡ Router (Heuristics): Fast decision taken -> '{heuristic_choice.upper()}'")
             return self.strategies.get(heuristic_choice, self.strategies.get("noop"))
 
-        # 2. Tenta decisão profunda (LLM)
+        # 2. Attempt deep decision (LLM)
         llm_choice = self._decide_via_llm(question)
 
-        logger.info(f"✅ Roteador (LLM): Decisão final -> '{llm_choice.upper()}' para '{question[:30]}...'")
+        logger.info(f"✅ Router (LLM): Final decision -> '{llm_choice.upper()}' for '{question[:30]}...'")
         return self.strategies.get(llm_choice, self.strategies.get("noop"))
 
     def _check_heuristics(self, question: str) -> Optional[str]:
         """
-        Aplica regras determinísticas baseadas na estrutura da string.
+        Applies deterministic rules based on the string structure.
 
         Args:
-            question (str): A pergunta do usuário.
+            question (str): The user's question.
 
         Returns:
-            Optional[str]: O nome da estratégia ('multi_query', etc) ou None se nenhuma regra se aplicar.
+            Optional[str]: The strategy name ('multi_query', etc) or None if no rule applies.
         """
-        # Regra 1: Perguntas muito curtas (< 4 palavras) geralmente precisam de expansão de contexto.
-        # Ex: "Capital do Brasil" -> Precisa virar "Qual a capital..." / "Cidade capital..."
+        # Rule 1: Very short questions (< 4 words) usually need context expansion.
+        # Ex: "Capital of Brazil" -> Needs to become "What is the capital..."
         if len(question.split()) < 4:
             return "multi_query"
 
@@ -88,90 +88,90 @@ class QueryRouter:
 
     def _decide_via_llm(self, question: str) -> str:
         """
-        Consulta o LLM para classificar a intenção da pergunta.
+        Queries the LLM to classify the question's intent.
 
         Args:
-            question (str): A pergunta do usuário.
+            question (str): The user's question.
 
         Returns:
-            str: A chave da estratégia escolhida (ex: 'hyde'). Retorna 'noop' em caso de erro.
+            str: The chosen strategy key (e.g., 'hyde'). Returns 'noop' in case of error.
         """
-        logger.debug("🤔 Roteador (LLM): Analisando intenção da pergunta...")
+        logger.debug("🤔 Router (LLM): Analyzing question intent...")
         prompt = self._build_prompt(question)
 
         try:
-            # Solicita uma resposta curta e determinística
+            # Request a short and deterministic response
             response = self.llm.generate_response(
                 prompt=prompt,
-                system_prompt="Você é um classificador de intenção de busca (RAG Router).",
+                system_prompt="You are a search intent classifier (RAG Router).",
                 max_new_tokens=10,
                 temperature=0.0
             )
 
-            # Delega a limpeza e validação da string
+            # Delegates string cleaning and validation
             return self._parse_strategy_key(response)
 
         except Exception as e:
-            logger.error(f"❌ Erro genérico no Roteador (LLM): {e}. Usando fallback 'noop'.")
+            logger.error(f"❌ Generic error in Router (LLM): {e}. Using fallback 'noop'.")
             return "noop"
 
     def _parse_strategy_key(self, raw_response: str) -> str:
         """
-        Limpa a resposta bruta do LLM e mapeia para uma chave válida.
+        Cleans the raw LLM response and maps it to a valid key.
 
         Args:
-            raw_response (str): O texto retornado pelo LLM (ex: " 'multi_query' ", "hyde.", etc).
+            raw_response (str): The text returned by the LLM (e.g., " 'multi_query' ", "hyde.", etc).
 
         Returns:
-            str: Uma chave válida presente em `self.strategies` ou 'noop' (fallback).
+            str: A valid key present in `self.strategies` or 'noop' (fallback).
         """
-        # Normalização básica
+        # Basic normalization
         cleaned = raw_response.strip().lower()
         cleaned = cleaned.replace("'", "").replace('"', "").replace(".", "")
 
-        # 1. Match Exato
+        # 1. Exact Match
         if cleaned in self.strategies:
             return cleaned
 
-        # 2. Match Parcial (Fuzzy) - Caso o LLM seja verboso
+        # 2. Fuzzy Match - In case the LLM is verbose
         if "multi" in cleaned or "query" in cleaned:
             return "multi_query"
         elif "hyde" in cleaned:
             return "hyde"
-        elif "noop" in cleaned or "exata" in cleaned:
+        elif "noop" in cleaned or "exact" in cleaned:
             return "noop"
 
-        logger.warning(f"⚠️ Roteador retornou chave desconhecida: '{raw_response}'. Usando fallback 'noop'.")
+        logger.warning(f"⚠️ Router returned unknown key: '{raw_response}'. Using fallback 'noop'.")
         return "noop"
 
     def _build_prompt(self, question: str) -> str:
         """
-        Constrói o prompt de classificação usando Few-Shot Learning (Exemplos).
+        Builds the classification prompt using Few-Shot Learning (Examples).
 
         Args:
-            question (str): A pergunta a ser analisada.
+            question (str): The question to be analyzed.
 
         Returns:
-            str: O prompt formatado.
+            str: The formatted prompt.
         """
         return f"""
-        Analise a PERGUNTA DO USUÁRIO e classifique-a em uma das seguintes estratégias de busca:
+        Analyze the USER QUESTION and classify it into one of the following search strategies:
 
         1. 'noop': {self.criteria['noop']}
         2. 'hyde': {self.criteria['hyde']}
         3. 'multi_query': {self.criteria['multi_query']}
 
-        EXEMPLOS PARA GUIAR SUA DECISÃO:
-        - "Erro 500 no endpoint /login" -> noop
-        - "Qual o CPF do cliente 9988?" -> noop
-        - "Explique o impacto da inflação nos juros" -> hyde
-        - "Como funciona a fotossíntese?" -> hyde
-        - "Capital do Brasil" -> multi_query
-        - "Qual o maior pico brasileiro?" -> multi_query (Fato geográfico/Sinônimos)
-        - "Melhores praias do nordeste" -> multi_query
+        EXAMPLES TO GUIDE YOUR DECISION:
+        - "Error 500 on endpoint /login" -> noop
+        - "What is the ID of client 9988?" -> noop
+        - "Explain the impact of inflation on interest rates" -> hyde
+        - "How does photosynthesis work?" -> hyde
+        - "Capital of Brazil" -> multi_query
+        - "What is the highest Brazilian peak?" -> multi_query (Geographical fact/Synonyms)
+        - "Best beaches in the northeast" -> multi_query
 
-        PERGUNTA DO USUÁRIO: "{question}"
+        USER QUESTION: "{question}"
 
-        Retorne APENAS o nome da estratégia (noop, hyde ou multi_query). Nada mais.
-        Resposta:
+        Return ONLY the strategy name (noop, hyde or multi_query). Nothing else.
+        Response:
         """

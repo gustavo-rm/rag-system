@@ -4,66 +4,66 @@ from typing import List, Dict, Any, Optional
 from rank_bm25 import BM25Okapi
 from src.stores.base import VectorStore
 
-# Configuração de Logger
+# Logger Configuration
 logger = logging.getLogger(__name__)
 
 
 class HybridRetriever:
     """
-    Orquestrador de Busca Híbrida (Dense + Sparse).
+    Hybrid Search Orchestrator (Dense + Sparse).
 
-    Combina a busca semântica (VectorStore) com a busca por palavras-chave (BM25).
-    Esta abordagem mitiga as fraquezas de cada método isolado:
-    - Vector Search: Bom para conceitos, ruim para termos exatos/raros.
-    - BM25: Bom para termos exatos (IDs, nomes próprios), ruim para sinônimos.
+    Combines semantic search (VectorStore) with keyword search (BM25).
+    This approach mitigates the weaknesses of each isolated method:
+    - Vector Search: Good for concepts, bad for exact/rare terms.
+    - BM25: Good for exact terms (IDs, proper names), bad for synonyms.
 
     Attributes:
-        vector_store (VectorStore): Instância do banco vetorial persistente.
-        bm25 (Optional[BM25Okapi]): Índice em memória para busca de palavras-chave.
-        documents_cache (List[Dict]): Cópia local dos metadados necessária para o BM25.
+        vector_store (VectorStore): Instance of the persistent vector database.
+        bm25 (Optional[BM25Okapi]): In-memory index for keyword search.
+        documents_cache (List[Dict]): Local copy of metadata needed for BM25.
     """
 
     def __init__(self, vector_store: VectorStore):
         """
-        Inicializa o HybridRetriever e tenta sincronizar com dados existentes.
+        Initializes the HybridRetriever and attempts to synchronize with existing data.
 
         Args:
-            vector_store (VectorStore): Banco de dados vetorial já instanciado.
+            vector_store (VectorStore): Already instantiated vector database.
         """
         self.vector_store = vector_store
         self.bm25: Optional[BM25Okapi] = None
         self.documents_cache: List[Dict[str, Any]] = []
 
-        # Tenta carregar dados pré-existentes para não começar com o BM25 vazio
+        # Tries to load pre-existing data so BM25 doesn't start empty
         self._try_sync_initial_data()
 
     def _tokenize(self, text: str) -> List[str]:
         """
-        Realiza a tokenização do texto para o algoritmo BM25.
+        Performs tokenization of the text for the BM25 algorithm.
 
-        Processo:
-        1. Converte para minúsculas.
-        2. Substitui pontuações por espaços (evita aglutinação).
-        3. Divide por espaços em branco.
+        Process:
+        1. Converts to lowercase.
+        2. Replaces punctuation with spaces (avoids agglutination).
+        3. Splits by whitespace.
 
         Args:
-            text (str): O texto cru a ser processado.
+            text (str): The raw text to be processed.
 
         Returns:
-            List[str]: Lista de tokens limpos.
+            List[str]: List of clean tokens.
 
         Example:
-            >>> _tokenize("Olá, Brasil!")
-            ['olá', 'brasil']
+            >>> _tokenize("Hello, World!")
+            ['hello', 'world']
         """
         if not text:
             return []
 
-        # Converte para minúsculas
+        # Converts to lowercase
         text = text.lower()
 
-        # Cria tabela de tradução: Pontuação -> Espaço
-        # Isso garante que "fim.inicio" vire "fim inicio" e não "fiminicio"
+        # Creates translation table: Punctuation -> Space
+        # This ensures "end.start" becomes "end start" and not "endstart"
         translator = str.maketrans(string.punctuation, ' ' * len(string.punctuation))
         cleaned_text = text.translate(translator)
 
@@ -71,19 +71,19 @@ class HybridRetriever:
 
     def _try_sync_initial_data(self) -> None:
         """
-        Sincroniza o índice BM25 (RAM) com os documentos persistidos no VectorStore (Disco).
+        Synchronizes the BM25 index (RAM) with documents persisted in the VectorStore (Disk).
 
-        Este método é crítico para garantir que, ao reiniciar a aplicação,
-        a busca por palavras-chave funcione nos documentos já indexados.
+        This method is critical to ensure that, upon restarting the application,
+        keyword search works on already indexed documents.
 
         Raises:
-            Exception: Captura e loga falhas de conexão com o banco, sem travar a inicialização.
+            Exception: Captures and logs database connection failures without crashing initialization.
         """
-        # Verifica duck-typing ou atributo específico do ChromaDB
+        # Checks for duck-typing or specific ChromaDB attribute
         if hasattr(self.vector_store, 'collection'):
-            logger.info("🔄 Sincronizando índice BM25 com dados do VectorStore...")
+            logger.info("🔄 Synchronizing BM25 index with VectorStore data...")
             try:
-                # Otimização: Requisita apenas IDs, Documentos e Metadatas (ignora embeddings pesados)
+                # Optimization: Requests only IDs, Documents, and Metadatas (ignores heavy embeddings)
                 all_data = self.vector_store.collection.get(include=['documents', 'metadatas'])
 
                 if all_data and all_data['ids']:
@@ -93,11 +93,11 @@ class HybridRetriever:
 
                     self.documents_cache = []
 
-                    # Reconstrói a estrutura de cache local
+                    # Reconstructs local cache structure
                     for doc_id, text, meta in zip(ids, texts, metadatas):
                         if meta is None:
                             meta = {}
-                        # Garante que o texto esteja no metadata para acesso rápido
+                        # Ensures text is in metadata for quick access
                         meta['text'] = text
 
                         self.documents_cache.append({
@@ -106,22 +106,22 @@ class HybridRetriever:
                         })
 
                     self._rebuild_bm25()
-                    logger.info(f"✅ BM25 reconstruído com sucesso ({len(self.documents_cache)} documentos).")
+                    logger.info(f"✅ BM25 successfully rebuilt ({len(self.documents_cache)} documents).")
                 else:
-                    logger.info("ℹ️ VectorStore vazio. BM25 iniciará vazio.")
+                    logger.info("ℹ️ VectorStore empty. BM25 will start empty.")
 
             except Exception as e:
-                logger.warning(f"⚠️ Falha não-crítica ao sincronizar BM25: {e}")
+                logger.warning(f"⚠️ Non-critical failure synchronizing BM25: {e}")
 
     def _rebuild_bm25(self) -> None:
         """
-        Recalcula o índice BM25 completo com base no `documents_cache` atual.
-        Deve ser chamado sempre que novos documentos são adicionados.
+        Recalculates the complete BM25 index based on the current `documents_cache`.
+        Must be called whenever new documents are added.
         """
         if not self.documents_cache:
             return
 
-        # Aplica a tokenização corrigida em todo o corpus
+        # Applies corrected tokenization across the entire corpus
         tokenized_corpus = [
             self._tokenize(doc['metadata'].get('text', ''))
             for doc in self.documents_cache
@@ -132,23 +132,23 @@ class HybridRetriever:
     def add_documents(self, chunks: List[str], embeddings: List[List[float]],
                       metadatas: Optional[List[Dict]] = None) -> None:
         """
-        Adiciona novos documentos ao sistema (Atualiza VectorStore e BM25).
+        Adds new documents to the system (Updates VectorStore and BM25).
 
         Args:
-            chunks (List[str]): Lista de textos dos documentos.
-            embeddings (List[List[float]]): Vetores gerados pelo Embedder.
-            metadatas (Optional[List[Dict]]): Metadados opcionais (fonte, página, etc).
+            chunks (List[str]): List of document texts.
+            embeddings (List[List[float]]): Vectors generated by the Embedder.
+            metadatas (Optional[List[Dict]]): Optional metadata (source, page, etc.).
         """
         import time
 
-        # Gera IDs únicos baseados em timestamp para evitar colisões
+        # Generates unique IDs based on timestamp to avoid collisions
         start_ts = int(time.time() * 1000)
         ids = [str(start_ts + i) for i in range(len(chunks))]
 
-        # 1. Persistência no Vector DB
+        # 1. Persistence in Vector DB
         self.vector_store.store_embeddings(chunks, embeddings, ids=ids, metadatas=metadatas)
 
-        # 2. Atualização do BM25 (Memória)
+        # 2. Update BM25 (Memory)
         for i, chunk in enumerate(chunks):
             meta = metadatas[i] if metadatas else {}
             meta['text'] = chunk
@@ -159,40 +159,40 @@ class HybridRetriever:
             })
 
         self._rebuild_bm25()
-        logger.info(f"➕ HybridRetriever: {len(chunks)} novos documentos indexados.")
+        logger.info(f"➕ HybridRetriever: {len(chunks)} new documents indexed.")
 
     def search(self, query_text: str, query_embedding: List[float], top_k: int = 5) -> List[Dict[str, Any]]:
         """
-        Executa a busca híbrida (Fusão de Resultados).
+        Executes hybrid search (Result Fusion).
 
-        Estratégia:
-        1. Busca top_k via Vetores (Similaridade Semântica).
-        2. Busca top_k via BM25 (Similaridade Lexical/Palavra-chave).
-        3. Realiza a fusão dos resultados usando o ID do documento como chave de deduplicação.
+        Strategy:
+        1. Top_k via Vectors (Semantic Similarity).
+        2. Top_k via BM25 (Lexical/Keyword Similarity).
+        3. Fuses results using document ID as deduplication key.
 
         Args:
-            query_text (str): A pergunta em linguagem natural (para o BM25).
-            query_embedding (List[float]): O vetor da pergunta (para o VectorStore).
-            top_k (int): Quantidade de documentos a recuperar de CADA fonte.
+            query_text (str): The natural language question (for BM25).
+            query_embedding (List[float]): The question vector (for VectorStore).
+            top_k (int): Number of documents to retrieve from EACH source.
 
         Returns:
-            List[Dict[str, Any]]: Lista unificada e desduplicada de documentos encontrados.
+            List[Dict[str, Any]]: Unified and deduplicated list of found documents.
         """
-        # A. Busca Vetorial (Dense)
+        # A. Vector Search (Dense)
         vector_results = self.vector_store.search(query_embedding, top_k=top_k)
 
-        # Normalização dos resultados vetoriais
+        # Normalization of vector results
         for doc in vector_results:
             doc['source'] = 'vector'
             if 'score' not in doc:
                 doc['score'] = 0.0
 
-        # B. Busca BM25 (Sparse)
+        # B. BM25 Search (Sparse)
         bm25_results = []
         if self.bm25:
             tokenized_query = self._tokenize(query_text)
 
-            # get_top_n retorna os itens crus do cache (dicts com id e metadata)
+            # get_top_n returns raw cache items (dicts with id and metadata)
             top_docs_bm25 = self.bm25.get_top_n(tokenized_query, self.documents_cache, n=top_k)
 
             for doc in top_docs_bm25:
@@ -200,32 +200,32 @@ class HybridRetriever:
                     'id': doc['id'],
                     'metadata': doc['metadata'],
                     'page_content': doc['metadata'].get('text', ''),
-                    'score': 0.0,  # BM25Okapi (rank_bm25) não expõe score facilmente aqui, placeholder para ReRanker
+                    'score': 0.0,  # BM25Okapi (rank_bm25) doesn't expose score easily here, placeholder for ReRanker
                     'source': 'bm25'
                 })
 
-        # C. Fusão e Deduplicação (Chave: ID)
+        # C. Fusion and Deduplication (Key: ID)
         combined_docs: Dict[str, Dict[str, Any]] = {}
 
-        # 1. Prioridade para Vetorial
+        # 1. Priority to Vector
         for doc in vector_results:
             doc_id = doc.get('id')
             if doc_id:
                 combined_docs[doc_id] = doc
 
-        # 2. Complemento com BM25
+        # 2. Complement with BM25
         for doc in bm25_results:
             doc_id = doc.get('id')
             if doc_id:
                 if doc_id not in combined_docs:
                     combined_docs[doc_id] = doc
                 else:
-                    # Se já existe, marca como híbrido (encontrado pelos dois métodos)
+                    # If it already exists, mark as hybrid (found by both methods)
                     combined_docs[doc_id]['source'] = 'hybrid'
 
         final_results = list(combined_docs.values())
 
         logger.info(
-            f"🔎 Busca Híbrida: {len(vector_results)} (Vector) + {len(bm25_results)} (BM25) -> {len(final_results)} Únicos")
+            f"🔎 Hybrid Search: {len(vector_results)} (Vector) + {len(bm25_results)} (BM25) -> {len(final_results)} Unique")
 
         return final_results

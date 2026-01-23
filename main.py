@@ -4,41 +4,49 @@ import logging
 from dotenv import load_dotenv
 from src.utils.logger import setup_logging
 
-# --- Configuração de Logging ---
+# --- Logging Configuration ---
 setup_logging()
 logger = logging.getLogger(__name__)
 
-# --- Carregamento de Variáveis ---
+# --- Load Variables ---
 load_dotenv()
 
-# OTIMIZAÇÃO DE MEMÓRIA CRÍTICA
-# Ajuda a evitar erros de OOM quando a memória está muito fragmentada
+# CRITICAL MEMORY OPTIMIZATION
+# Helps avoid OOM (Out of Memory) errors when memory is highly fragmented.
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
-# --- AUTO-CONFIGURAÇÃO DE MODO OFFLINE/ONLINE ---
+# --- AUTO-CONFIGURATION OF OFFLINE/ONLINE MODE ---
 def auto_configure_huggingface():
     """
-    Verifica se os modelos necessários já estão no cache.
-    - Se SIM: Ativa modo OFFLINE (rápido, sem timeout).
-    - Se NÃO: Ativa modo ONLINE (permite download).
+    Checks if the necessary models are already in the cache.
+
+    If ALL models are present:
+        Activates OFFLINE mode (fast initialization, no timeout).
+    If ANY model is missing:
+        Activates ONLINE mode (allows downloading).
+
+    Side Effects:
+        - Checks the HuggingFace cache directory.
+        - Sets 'HF_HUB_OFFLINE' and 'TRANSFORMERS_OFFLINE' environment variables if models are found.
+        - Deletes these environment variables if downloads are needed.
     """
-    # 1. Definição dos modelos usados no projeto
+    # 1. Definition of models used in the project
     required_models = [
-        "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit",  # LLM atual
+        "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit",  # Current LLM
         "BAAI/bge-reranker-base",  # Reranker
-        "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"  # Embedder base
+        "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"  # Base Embedder
     ]
 
-    # Caminho padrão do cache no Linux
+    # Default cache path on Linux
     cache_root = Path(os.getenv("HF_HOME", "~/.cache/huggingface/hub")).expanduser()
 
     missing_models = []
 
-    logger.info(f"🔍 Verificando cache em: {cache_root}")
+    logger.info(f"🔍 Checking cache at: {cache_root}")
 
     for model_id in required_models:
-        # O HuggingFace salva pastas trocando '/' por '--'
-        # Ex: unsloth/llama-3 -> models--unsloth--llama-3
+        # HuggingFace saves folders replacing '/' with '--'
+        # Example: unsloth/llama-3 -> models--unsloth--llama-3
         folder_name = f"models--{model_id.replace('/', '--')}"
         model_path = cache_root / folder_name
 
@@ -46,22 +54,22 @@ def auto_configure_huggingface():
             missing_models.append(model_id)
 
     if not missing_models:
-        logger.info("✅ Todos os modelos encontrados no cache local.")
-        logger.info("🚀 Ativando modo OFFLINE (Inicialização Instantânea).")
+        logger.info("✅ All models found in local cache.")
+        logger.info("🚀 Activating OFFLINE mode (Instant Initialization).")
         os.environ["HF_HUB_OFFLINE"] = "1"
         os.environ["TRANSFORMERS_OFFLINE"] = "1"
     else:
-        logger.info(f"🌐 Modelos ausentes detectados: {missing_models}")
-        logger.info("⬇️  Modo ONLINE ativado para download.")
-        # Garante que as variáveis não estão setadas
+        logger.info(f"🌐 Missing models detected: {missing_models}")
+        logger.info("⬇️  ONLINE mode activated for download.")
+        # Ensure variables are not set
         if "HF_HUB_OFFLINE" in os.environ: del os.environ["HF_HUB_OFFLINE"]
         if "TRANSFORMERS_OFFLINE" in os.environ: del os.environ["TRANSFORMERS_OFFLINE"]
 
 
-# Executa a verificação antes de carregar o resto do sistema
+# Executes verification before loading the rest of the system
 auto_configure_huggingface()
 
-# --- Importações ---
+# --- Imports ---
 
 # Ingestion
 from src.ingestion.chunker import Chunker
@@ -91,16 +99,22 @@ from src.chat.chatbot import Chatbot
 
 def main():
     """
-    Função principal de orquestração do RAG.
+    Main orchestration function for the RAG system.
+
+    This function initializes all components of the Retrieval-Augmented Generation (RAG) pipeline,
+    including the vector store, retriever, embedder, LLM, reranker, query router, and cache layers.
+    It also handles the ingestion of a default PDF document if it has not been processed yet.
+
+    Finally, it enters an interactive chat loop where the user can ask questions to the system.
     """
-    logger.info("🚀 Inicializando sistema RAG...")
+    logger.info("🚀 Initializing RAG system...")
 
     # ==========================================
-    # 1. CONFIGURAÇÃO DOS COMPONENTES BASE
+    # 1. BASE COMPONENTS CONFIGURATION
     # ==========================================
 
-    # --- A. Vector Store (Banco de Dados) ---
-    logger.info("Configurando Vector Store...")
+    # --- A. Vector Store (Database) ---
+    logger.info("Configuring Vector Store...")
     config_store = {
         'type': 'chroma',
         'path': 'data/chromaDB/',
@@ -108,69 +122,69 @@ def main():
     }
     base_vector_store = get_vector_store(config_store)
 
-    # --- B. Retriever (Híbrido) ---
-    # Envolve o banco vetorial para adicionar capacidade de busca por palavra-chave (BM25)
+    # --- B. Retriever (Hybrid) ---
+    # Wraps the vector store to add keyword search capability (BM25)
     hybrid_retriever = HybridRetriever(base_vector_store)
 
-    # --- C. Componentes de IA (Embedder, LLM, ReRanker) ---
+    # --- C. AI Components (Embedder, LLM, ReRanker) ---
 
     # Chunker
     chunker = Chunker(chunk_size=512, chunk_overlap=50)
 
-    # --- Configuração do Modelo de Embedding ---
+    # --- Embedding Model Configuration ---
 
-    # Caminho onde o script de treino salvou o modelo
+    # Path where the training script saved the model
     finetuned_model_path = "models/finetuned_v3"
     base_model_name = "paraphrase-multilingual-mpnet-base-v2"
 
-    # Lógica inteligente de seleção
+    # Intelligent selection logic
     if os.path.exists(finetuned_model_path):
-        logger.info(f"💎 Modelo Fine-Tuned detectado! Usando: {finetuned_model_path}")
+        logger.info(f"💎 Fine-Tuned model detected! Using: {finetuned_model_path}")
         selected_model = finetuned_model_path
     else:
         logger.warning(
-            f"⚠️ Modelo Fine-Tuned não encontrado em '{finetuned_model_path}'. Usando modelo base: {base_model_name}")
+            f"⚠️ Fine-Tuned model not found in '{finetuned_model_path}'. Using base model: {base_model_name}")
         selected_model = base_model_name
 
-    # LLM: Configurado com controle de Context Window e No-Grad
-    # Se usar OpenAI, lembrar de configurar a key no .env
+    # LLM: Configured with Context Window control and No-Grad
+    # If using OpenAI, remember to configure the key in .env
     llm = LLM(
         method='local',
         model_name='unsloth/llama-3-8b-Instruct-bnb-4bit'
     )
 
-    # Instancia o Embedder com o modelo escolhido
+    # Instantiate the Embedder with the chosen model
     embedder = Embedder(
         method='sbert',
         model_name=selected_model
-        # batch_size será auto-configurado (32 para GPU)
+        # batch_size will be auto-configured (32 for GPU)
     )
 
-    # ReRanker: Atualizado para modelo BAAI (Melhor suporte a Multilíngue/PT-BR)
+    # ReRanker: Updated to BAAI model (Better Multi-lingual/PT-BR support)
     reranker = ReRanker(model_name='BAAI/bge-reranker-base', device='cpu')
 
     # ==========================================
-    # 2. ESTRATÉGIAS DE ROTEAMENTO (ROUTER)
+    # 2. ROUTING STRATEGIES (ROUTER)
     # ==========================================
-    logger.info("Configurando estratégias de Query Routing...")
+    logger.info("Configuring Query Routing strategies...")
 
-    # Instancia as estratégias injetando o LLM onde necessário
+    # Instantiate strategies injecting the LLM where necessary
     transformers_map = {
         "noop": NoOpTransformer(),
         "hyde": HyDETransformer(llm),
         "multi_query": MultiQueryTransformer(llm, num_queries=3)
     }
 
-    # O Router recebe o mapa e decidirá qual usar em tempo de execução
+    # The Router receives the map and will decide which one to use at runtime
     query_router = QueryRouter(llm, strategies=transformers_map)
 
     # ==========================================
-    # 3. CACHE E PRÉ-PROCESSAMENTO
+    # 3. CACHE AND PREPROCESSING
     # ==========================================
 
-    # Pega dimensão dinamicamente do modelo carregado (ex: 768 para mpnet)
-    # Acessamos o atributo interno do SentenceTransformer se for método sbert
-    embedding_dim = 768  # Valor padrão seguro para mpnet-base
+    # Get dimension dynamically from the loaded model (e.g., 768 for mpnet)
+    # Access the internal attribute of SentenceTransformer if the method is sbert
+    embedding_dim = 768  # Safe default value for mpnet-base
     if hasattr(embedder, 'model') and hasattr(embedder.model, 'get_sentence_embedding_dimension'):
         embedding_dim = embedder.model.get_sentence_embedding_dimension()
 
@@ -179,10 +193,10 @@ def main():
     query_corrector = QueryCorrector(language='pt', enable_grammar=True)
 
     # ==========================================
-    # 4. MONTAGEM DO SISTEMA (RAG + CHATBOT)
+    # 4. SYSTEM ASSEMBLY (RAG + CHATBOT)
     # ==========================================
 
-    logger.info("Montando Pipeline RAG...")
+    logger.info("Assembling RAG Pipeline...")
 
     rag_system = RAGSystem(
         chunker=chunker,
@@ -202,67 +216,67 @@ def main():
     )
 
     # ==========================================
-    # 5. INGESTÃO DE DADOS (Execução Única)
+    # 5. DATA INGESTION (Single Execution)
     # ==========================================
 
     pdf_path = "data/pdfs/relevo-brasileiro.pdf"
 
-    # Verifica se o arquivo existe
+    # Checks if the file exists
     if os.path.exists(pdf_path):
-        # Lógica simples para evitar re-ingestão a cada boot
-        # Em produção, você verificaria se o arquivo já está no banco pelo hash ou nome
+        # Simple logic to avoid re-ingestion on every boot
+        # In production, check if the file is already in the database by hash or name
         ingestion_done_marker = f"{pdf_path}.done"
 
         if not os.path.exists(ingestion_done_marker):
-            logger.info(f"Iniciando ingestão do documento: {pdf_path}")
+            logger.info(f"Starting ingestion of document: {pdf_path}")
             try:
                 rag_system.setup_pipeline(pdf_path)
-                # Cria um arquivo vazio para marcar que já foi feito
+                # Create an empty file to mark as done
                 with open(ingestion_done_marker, 'w') as f:
                     f.write('done')
-                logger.info("Ingestão concluída e marcada.")
+                logger.info("Ingestion completed and marked.")
             except Exception as e:
-                logger.error(f"Falha na ingestão: {e}")
+                logger.error(f"Ingestion failed: {e}")
         else:
-            logger.info("Documento já processado anteriormente. Pulando ingestão.")
+            logger.info("Document previously processed. Skipping ingestion.")
     else:
-        logger.warning(f"PDF não encontrado em '{pdf_path}'. O sistema funcionará apenas com conhecimento prévio.")
+        logger.warning(f"PDF not found at '{pdf_path}'. The system will work only with prior knowledge.")
 
     # ==========================================
-    # 6. LOOP DE INTERAÇÃO (CHAT)
+    # 6. INTERACTION LOOP (CHAT)
     # ==========================================
 
     print("\n" + "=" * 50)
-    print("🤖 Assistente RAG v3.0 Pronto!")
-    print("Comandos: 'sair' para encerrar.")
+    print("🤖 RAG Assistant v3.0 Ready!")
+    print("Commands: 'exit' to quit.")
     print("=" * 50 + "\n")
 
     while True:
         try:
-            user_question = input("Você: ").strip()
+            user_question = input("You: ").strip()
 
             if not user_question:
                 continue
 
             if user_question.lower() in ['sair', 'exit', 'quit']:
-                logger.info("Encerrando sessão.")
-                print("Assistente: Até logo! 👋")
+                logger.info("Ending session.")
+                print("Assistant: See you later! 👋")
                 break
 
-            # O Chatbot gerencia todo o fluxo (correção -> cache -> RAG -> Resposta)
+            # The Chatbot manages the entire flow (correction -> cache -> RAG -> Response)
             response = chatbot.chat(user_question)
 
-            print(f"Assistente: {response}\n")
+            print(f"Assistant: {response}\n")
 
         except KeyboardInterrupt:
-            print("\nOperação cancelada pelo usuário.")
+            print("\nOperation cancelled by user.")
             break
         except LLMGenerationError as e:
-            logger.error(f"Erro no LLM: {e}")
-            print("Assistente: Desculpe, tive um problema ao gerar a resposta. Tente simplificar a pergunta.")
+            logger.error(f"LLM Error: {e}")
+            print("Assistant: Sorry, I had a problem generating the response. Try simplifying the question.")
         except Exception as e:
-            logger.critical(f"Erro não tratado: {e}")
-            print("Assistente: Ocorreu um erro interno.")
+            logger.critical(f"Unhandled error: {e}")
+            print("Assistant: An internal error occurred.")
 
 
 if __name__ == "__main__":

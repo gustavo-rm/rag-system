@@ -8,91 +8,101 @@ logger = logging.getLogger(__name__)
 
 class SemanticCache:
     """
-    Cache de Similaridade Semântica usando FAISS.
+    Semantic Similarity Cache using FAISS.
 
-    Armazena vetores de perguntas passadas. Se uma nova pergunta for semanticamente
-    próxima (acima de um limiar), retorna a resposta antiga, economizando chamadas de LLM.
+    Stores vectors of past questions. If a new question is semantically
+    close (above a threshold), it returns the old response, saving LLM calls.
     """
 
     def __init__(self, dimension: int, similarity_threshold: float = 0.92):
         """
-        Inicializa o índice vetorial.
+        Initializes the vector index.
 
         Args:
-            dimension (int): Dimensão dos embeddings (ex: 768 para MPNet, 1536 para OpenAI).
-            similarity_threshold (float): Nota de corte (0.0 a 1.0) para considerar similaridade.
-                                          Recomenda-se 0.90+ para evitar respostas erradas.
+            dimension (int): Dimension of embeddings (e.g., 768 for MPNet, 1536 for OpenAI).
+            similarity_threshold (float): Cutoff score (0.0 to 1.0) to consider similarity.
+                                          Recommended 0.90+ to avoid incorrect answers.
         """
         self.dimension = dimension
         self.threshold = similarity_threshold
 
-        # IndexFlatIP = Inner Product (Produto Interno).
-        # Com vetores normalizados, isso equivale à Similaridade de Cosseno.
+        # IndexFlatIP = Inner Product.
+        # With normalized vectors, this is equivalent to Cosine Similarity.
         self.index = faiss.IndexFlatIP(dimension)
 
-        # Armazena as respostas textuais alinhadas com os índices do FAISS
+        # Stores textual responses aligned with FAISS indices
         self.responses: List[str] = []
 
-        logger.info(f"🧠 Cache Semântico (Camada 2) inicializado. Dim: {dimension}, Threshold: {similarity_threshold}")
+        logger.info(f"🧠 Semantic Cache (Layer 2) initialized. Dim: {dimension}, Threshold: {similarity_threshold}")
 
     def _prepare_vector(self, vector: np.ndarray) -> np.ndarray:
         """
-        Prepara o vetor para o FAISS: garante float32, formato 2D e normalização.
+        Prepares the vector for FAISS: ensures float32, 2D format, and normalization.
 
-        IMPORTANTE: Cria uma cópia para não alterar o vetor original in-place.
+        IMPORTANT: Creates a copy to not alter the original vector in-place.
+
+        Args:
+            vector (np.ndarray): The input vector.
+
+        Returns:
+            np.ndarray: The prepared vector.
         """
-        # Garante que é float32 (FAISS exige isso)
+        # Ensures it is float32 (FAISS requires this)
         vec = vector.astype(np.float32)
 
-        # Garante formato 2D (1, dim)
+        # Ensures 2D format (1, dim)
         if vec.ndim == 1:
             vec = np.expand_dims(vec, axis=0)
 
-        # Normalização L2 para usar Cosseno
+        # L2 Normalization to use Cosine
         faiss.normalize_L2(vec)
         return vec
 
     def add(self, question_embedding: np.ndarray, answer: str):
         """
-        Adiciona uma nova entrada ao cache.
+        Adds a new entry to the cache.
+
+        Args:
+            question_embedding (np.ndarray): The embedding of the question.
+            answer (str): The answer to cache.
         """
-        # Copia e prepara o vetor
+        # Copies and prepares the vector
         normalized_embedding = self._prepare_vector(question_embedding)
 
         self.index.add(normalized_embedding)
         self.responses.append(answer)
-        logger.debug("Nova entrada adicionada ao Cache Semântico.")
+        logger.debug("New entry added to Semantic Cache.")
 
     def check(self, query_embedding: np.ndarray) -> Optional[str]:
         """
-        Verifica se existe alguma pergunta similar no histórico.
+        Checks if there is any similar question in the history.
 
         Args:
-            query_embedding (np.ndarray): O vetor da nova pergunta.
+            query_embedding (np.ndarray): The vector of the new question.
 
         Returns:
-            Optional[str]: A resposta cacheada se houver similaridade suficiente.
+            Optional[str]: The cached response if there is sufficient similarity, otherwise None.
         """
         if self.index.ntotal == 0:
             return None
 
         normalized_query = self._prepare_vector(query_embedding)
 
-        # Busca o 1 vizinho mais próximo (k=1)
-        # D: Distâncias (Scores), I: Índices
+        # Searches for the 1 nearest neighbor (k=1)
+        # D: Distances (Scores), I: Indices
         D, I = self.index.search(normalized_query, 1)
 
         top_score = D[0][0]
         top_index = I[0][0]
 
-        logger.debug(f"Cache Semântico: Score encontrado {top_score:.4f} (Limiar: {self.threshold})")
+        logger.debug(f"Semantic Cache: Score found {top_score:.4f} (Threshold: {self.threshold})")
 
         if top_score >= self.threshold:
-            logger.info(f"🎯 Cache Semântico HIT! Score: {top_score:.4f}")
+            logger.info(f"🎯 Semantic Cache HIT! Score: {top_score:.4f}")
             if 0 <= top_index < len(self.responses):
                 return self.responses[top_index]
             else:
-                logger.error("Índice do FAISS dessincronizado com lista de respostas.")
+                logger.error("FAISS index out of sync with response list.")
                 return None
 
         return None
