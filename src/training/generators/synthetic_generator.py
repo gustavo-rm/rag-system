@@ -68,7 +68,8 @@ class SyntheticTripletGenerator(TripletGenerator):
                     prompt=prompt,
                     system_prompt=self.system_prompt,
                     max_new_tokens=60,  # Perguntas costumam ser curtas
-                    temperature=0.5  # Criatividade média para variar o fraseado
+                    temperature=0.5,  # Criatividade média para variar o fraseado
+                    use_cache=False
                 )
 
                 # Validação simples da qualidade da geração

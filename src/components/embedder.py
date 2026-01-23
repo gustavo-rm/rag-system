@@ -31,7 +31,7 @@ class Embedder:
       essencial para cálculos precisos de similaridade de cosseno.
     """
 
-    def __init__(self, method: str = 'sbert', model_name: str = None,
+    def __init__(self, method: str = 'sbert', model_name: str = None, device: str = None,
                  openai_api_key: str = None, batch_size: int = None):
         """
         Inicializa o Embedder com configurações de hardware e performance.
@@ -48,8 +48,8 @@ class Embedder:
         """
         self.method = method
 
-        # Lógica para definir o device
-        self.device = "cuda" if torch.cuda.is_available() and method == 'sbert' else "cpu"
+        # Para GPUs de 8GB, o Embedder DEVE ficar na CPU para deixar espaço pro LLM.
+        self.device = self._resolve_device(method) if device is None else device # Força CPU se não especificado
 
         # --- Lógica para definir o Batch Size ---
         if batch_size is not None:
@@ -69,7 +69,11 @@ class Embedder:
         if self.method == 'sbert':
             logger.info(f"🖥️ Inicializando SBERT ({model_name or DEFAULT_SBERT_MODEL})...")
             sbert_model = model_name or DEFAULT_SBERT_MODEL
-            self.model = SentenceTransformer(sbert_model, device=self.device)
+            self.model = SentenceTransformer(
+                sbert_model,
+                device=self.device,
+                tokenizer_kwargs={"fix_mistral_regex": True}
+            )
 
         elif self.method == 'openai':
             if not OpenAI:
@@ -83,6 +87,12 @@ class Embedder:
 
         else:
             raise ValueError("Método inválido. Use 'sbert' ou 'openai'.")
+
+    def _resolve_device(self, method: str, prefer_gpu: bool = False) -> str:
+        if not torch.cuda.is_available() and method != 'sbert':
+            return "cpu"
+
+        return "cuda" if prefer_gpu else "cpu"
 
     def generate_embeddings(self, chunks: List[str]) -> List[List[float]]:
         """Gera a representação vetorial para uma lista de textos."""

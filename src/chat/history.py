@@ -32,6 +32,10 @@ class ChatHistory:
         if not os.path.exists(persist_directory):
             os.makedirs(persist_directory)
 
+    def is_empty(self) -> bool:
+        """Retorna True se o histórico não tiver nenhuma mensagem."""
+        return len(self.messages) == 0
+
     def add_message(self, role: str, content: str):
         """
         Adiciona uma nova mensagem e aplica a poda automática (trimming).

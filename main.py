@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import logging
 from dotenv import load_dotenv
 from src.utils.logger import setup_logging
@@ -9,6 +10,56 @@ logger = logging.getLogger(__name__)
 
 # --- Carregamento de Variáveis ---
 load_dotenv()
+
+# OTIMIZAÇÃO DE MEMÓRIA CRÍTICA
+# Ajuda a evitar erros de OOM quando a memória está muito fragmentada
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
+# --- AUTO-CONFIGURAÇÃO DE MODO OFFLINE/ONLINE ---
+def auto_configure_huggingface():
+    """
+    Verifica se os modelos necessários já estão no cache.
+    - Se SIM: Ativa modo OFFLINE (rápido, sem timeout).
+    - Se NÃO: Ativa modo ONLINE (permite download).
+    """
+    # 1. Definição dos modelos usados no projeto
+    required_models = [
+        "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit",  # LLM atual
+        "BAAI/bge-reranker-base",  # Reranker
+        "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"  # Embedder base
+    ]
+
+    # Caminho padrão do cache no Linux
+    cache_root = Path(os.getenv("HF_HOME", "~/.cache/huggingface/hub")).expanduser()
+
+    missing_models = []
+
+    logger.info(f"🔍 Verificando cache em: {cache_root}")
+
+    for model_id in required_models:
+        # O HuggingFace salva pastas trocando '/' por '--'
+        # Ex: unsloth/llama-3 -> models--unsloth--llama-3
+        folder_name = f"models--{model_id.replace('/', '--')}"
+        model_path = cache_root / folder_name
+
+        if not model_path.exists():
+            missing_models.append(model_id)
+
+    if not missing_models:
+        logger.info("✅ Todos os modelos encontrados no cache local.")
+        logger.info("🚀 Ativando modo OFFLINE (Inicialização Instantânea).")
+        os.environ["HF_HUB_OFFLINE"] = "1"
+        os.environ["TRANSFORMERS_OFFLINE"] = "1"
+    else:
+        logger.info(f"🌐 Modelos ausentes detectados: {missing_models}")
+        logger.info("⬇️  Modo ONLINE ativado para download.")
+        # Garante que as variáveis não estão setadas
+        if "HF_HUB_OFFLINE" in os.environ: del os.environ["HF_HUB_OFFLINE"]
+        if "TRANSFORMERS_OFFLINE" in os.environ: del os.environ["TRANSFORMERS_OFFLINE"]
+
+
+# Executa a verificação antes de carregar o resto do sistema
+auto_configure_huggingface()
 
 # --- Importações ---
 
@@ -53,7 +104,7 @@ def main():
     config_store = {
         'type': 'chroma',
         'path': 'data/chromaDB/',
-        'collection_name': 'rag_project_v2'
+        'collection_name': 'rag_project_v3'
     }
     base_vector_store = get_vector_store(config_store)
 
@@ -81,6 +132,13 @@ def main():
             f"⚠️ Modelo Fine-Tuned não encontrado em '{finetuned_model_path}'. Usando modelo base: {base_model_name}")
         selected_model = base_model_name
 
+    # LLM: Configurado com controle de Context Window e No-Grad
+    # Se usar OpenAI, lembrar de configurar a key no .env
+    llm = LLM(
+        method='local',
+        model_name='unsloth/llama-3-8b-Instruct-bnb-4bit'
+    )
+
     # Instancia o Embedder com o modelo escolhido
     embedder = Embedder(
         method='sbert',
@@ -89,15 +147,7 @@ def main():
     )
 
     # ReRanker: Atualizado para modelo BAAI (Melhor suporte a Multilíngue/PT-BR)
-    reranker = ReRanker(model_name='BAAI/bge-reranker-base')
-
-    # LLM: Configurado com controle de Context Window e No-Grad
-    # Se usar OpenAI, lembrar de configurar a key no .env
-    llm = LLM(
-        method='local',
-        model_name='microsoft/Phi-3-mini-4k-instruct',
-        context_window=4096  # Limite do Phi-3
-    )
+    reranker = ReRanker(model_name='BAAI/bge-reranker-base', device='cpu')
 
     # ==========================================
     # 2. ESTRATÉGIAS DE ROTEAMENTO (ROUTER)
@@ -183,7 +233,7 @@ def main():
     # ==========================================
 
     print("\n" + "=" * 50)
-    print("🤖 Assistente RAG v2.0 Pronto!")
+    print("🤖 Assistente RAG v3.0 Pronto!")
     print("Comandos: 'sair' para encerrar.")
     print("=" * 50 + "\n")
 
