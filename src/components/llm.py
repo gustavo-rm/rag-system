@@ -7,12 +7,13 @@ from transformers import (
     BitsAndBytesConfig,
     PreTrainedTokenizer
 )
+from src.utils.exceptions import RAGBaseError
 
 # Logger configuration
 logger = logging.getLogger(__name__)
 
 
-class LLMGenerationError(Exception):
+class LLMGenerationError(RAGBaseError):
     """Custom exception raised when any critical failure occurs in text generation."""
     pass
 
@@ -257,17 +258,24 @@ class LLM:
 
         Returns:
             str: API response content.
+
+        Raises:
+            LLMGenerationError: If OpenAI API call fails.
         """
-        response = self.client.chat.completions.create(
-            model=self.model_name,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=temperature,
-            max_tokens=max_tokens
-        )
-        return response.choices[0].message.content.strip()
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=temperature,
+                max_tokens=max_tokens
+            )
+            return response.choices[0].message.content.strip()
+        except OpenAIError as e:
+            logger.error(f"OpenAI API generation failed: {e}")
+            raise LLMGenerationError(f"OpenAI API failed: {e}", e)
 
     def _generate_local(self, prompt: str, system_prompt: str, max_new_tokens: int, temperature: float,
                         use_cache: bool) -> str:

@@ -2,6 +2,7 @@ import os
 import chromadb
 from typing import List, Dict, Any, Optional
 from .base import VectorStore
+from src.utils.exceptions import VectorStoreError
 import logging
 
 # Logger Configuration
@@ -18,21 +19,28 @@ class ChromaStore(VectorStore):
         Args:
             path (str): Path to the persistence directory.
             collection_name (str): Name of the collection to use.
+
+        Raises:
+            VectorStoreError: If initialization fails.
         """
-        # Ensures the persistence directory exists
-        if not os.path.exists(path):
-            os.makedirs(path)
+        try:
+            # Ensures the persistence directory exists
+            if not os.path.exists(path):
+                os.makedirs(path)
 
-        # Settings to avoid telemetry warnings
-        settings = chromadb.config.Settings(anonymized_telemetry=False)
+            # Settings to avoid telemetry warnings
+            settings = chromadb.config.Settings(anonymized_telemetry=False)
 
-        self.client = chromadb.PersistentClient(path=path, settings=settings)
-        self.collection_name = collection_name
-        self.collection = self.client.get_or_create_collection(
-            name=self.collection_name,
-            metadata={"hnsw:space": "cosine"}
-        )
-        logger.info(f"Successfully connected to ChromaDB collection '{self.collection_name}'.")
+            self.client = chromadb.PersistentClient(path=path, settings=settings)
+            self.collection_name = collection_name
+            self.collection = self.client.get_or_create_collection(
+                name=self.collection_name,
+                metadata={"hnsw:space": "cosine"}
+            )
+            logger.info(f"Successfully connected to ChromaDB collection '{self.collection_name}'.")
+        except Exception as e:
+            logger.error(f"Failed to initialize ChromaDB: {e}")
+            raise VectorStoreError(f"Failed to initialize ChromaDB at '{path}': {e}", e)
 
     def store_embeddings(self,
                          chunks: List[str],
@@ -47,27 +55,34 @@ class ChromaStore(VectorStore):
             embeddings (List[List[float]]): List of vectors.
             ids (List[str], optional): List of unique IDs.
             metadatas (Optional[List[Dict[str, Any]]]): Metadata for each chunk.
+
+        Raises:
+            VectorStoreError: If the storage operation fails.
         """
-        if ids is None:
-            ids = [str(i) for i in range(len(chunks))]
+        try:
+            if ids is None:
+                ids = [str(i) for i in range(len(chunks))]
 
-        # ChromaDB requires metadatas to be None or a valid list of Dicts.
-        # To ensure future compatibility (e.g., BM25), we ensure metadata exists.
-        if metadatas is None:
-            metadatas = [{} for _ in range(len(chunks))]
+            # ChromaDB requires metadatas to be None or a valid list of Dicts.
+            # To ensure future compatibility (e.g., BM25), we ensure metadata exists.
+            if metadatas is None:
+                metadatas = [{} for _ in range(len(chunks))]
 
-        # Optional: Save text inside metadata as well,
-        # although Chroma saves it in 'documents', this facilitates interoperability.
-        for i, meta in enumerate(metadatas):
-            meta['text'] = chunks[i]
+            # Optional: Save text inside metadata as well,
+            # although Chroma saves it in 'documents', this facilitates interoperability.
+            for i, meta in enumerate(metadatas):
+                meta['text'] = chunks[i]
 
-        self.collection.add(
-            embeddings=embeddings,
-            documents=chunks,
-            ids=ids,
-            metadatas=metadatas
-        )
-        logger.info(f"{len(chunks)} embeddings and metadata stored in ChromaDB.")
+            self.collection.add(
+                embeddings=embeddings,
+                documents=chunks,
+                ids=ids,
+                metadatas=metadatas
+            )
+            logger.info(f"{len(chunks)} embeddings and metadata stored in ChromaDB.")
+        except Exception as e:
+            logger.error(f"Failed to store embeddings in ChromaDB: {e}")
+            raise VectorStoreError(f"Failed to store embeddings: {e}", e)
 
     def search(self, query_embedding: List[float], top_k: int = 5) -> List[Dict[str, Any]]:
         """
@@ -79,15 +94,22 @@ class ChromaStore(VectorStore):
 
         Returns:
             List[Dict[str, Any]]: Compatible structure: {'id', 'score', 'metadata': {'text': ..., 'source': ...}}
-        """
-        results = self.collection.query(
-            query_embeddings=[query_embedding],
-            n_results=top_k,
-            # Important: Explicitly request metadatas and documents
-            include=["documents", "metadatas", "distances"]
-        )
 
-        return self._format_search_results(results)
+        Raises:
+            VectorStoreError: If the search operation fails.
+        """
+        try:
+            results = self.collection.query(
+                query_embeddings=[query_embedding],
+                n_results=top_k,
+                # Important: Explicitly request metadatas and documents
+                include=["documents", "metadatas", "distances"]
+            )
+
+            return self._format_search_results(results)
+        except Exception as e:
+            logger.error(f"Failed to search in ChromaDB: {e}")
+            raise VectorStoreError(f"Failed to search in ChromaDB: {e}", e)
 
     def _format_search_results(self, results: Dict[str, Any]) -> List[Dict[str, Any]]:
         """

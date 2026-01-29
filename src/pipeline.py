@@ -8,6 +8,7 @@ from src.ingestion.pdf_processor import PDFProcessor
 from src.components.reranker import ReRanker
 from src.components.hybrid_retriever import HybridRetriever
 from src.routing.query_router import QueryRouter
+from src.utils.exceptions import IngestionError, EmbeddingError, VectorStoreError
 
 # Logger Configuration for the module
 logger = logging.getLogger(__name__)
@@ -73,6 +74,12 @@ class RAGSystem:
 
         Args:
             pdf_path (str): Path to the PDF file.
+
+        Raises:
+            IngestionError: If file processing fails.
+            EmbeddingError: If vectorization fails.
+            VectorStoreError: If storage fails.
+            Exception: For unexpected critical errors.
         """
         logger.info(f"--- Starting ingestion pipeline for: {pdf_path} ---")
 
@@ -92,8 +99,11 @@ class RAGSystem:
             self.retriever.add_documents(chunks, embeddings)
             logger.info("--- Ingestion pipeline completed! ---")
 
+        except (IngestionError, EmbeddingError, VectorStoreError) as e:
+            logger.error(f"❌ Pipeline component failure: {e}")
+            raise e
         except Exception as e:
-            logger.error(f"❌ Critical ingestion failure: {e}")
+            logger.error(f"❌ Critical unhandled ingestion failure: {e}")
             raise e
 
     def ask(self, question: str, retrieval_top_k: int = 20, rerank_top_n: int = 5) -> Dict[str, Any]:
