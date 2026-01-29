@@ -205,6 +205,29 @@ class HybridRetriever:
                 })
 
         # C. Fusion and Deduplication (Key: ID)
+        final_results = self._fuse_results(vector_results, bm25_results)
+
+        logger.info(
+            f"🔎 Hybrid Search: {len(vector_results)} (Vector) + {len(bm25_results)} (BM25) -> {len(final_results)} Unique")
+
+        return final_results
+
+    def _fuse_results(self, vector_results: List[Dict[str, Any]], bm25_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Merges results from Vector search and BM25 search based on Document ID.
+
+        Fusion Strategy:
+        1. Prioritize Vector results.
+        2. Supplement with BM25 results.
+        3. Mark duplicates as 'hybrid'.
+
+        Args:
+            vector_results (List[Dict[str, Any]]): Results from vector store.
+            bm25_results (List[Dict[str, Any]]): Results from BM25.
+
+        Returns:
+            List[Dict[str, Any]]: Deduplicated and merged list of documents.
+        """
         combined_docs: Dict[str, Dict[str, Any]] = {}
 
         # 1. Priority to Vector
@@ -223,9 +246,4 @@ class HybridRetriever:
                     # If it already exists, mark as hybrid (found by both methods)
                     combined_docs[doc_id]['source'] = 'hybrid'
 
-        final_results = list(combined_docs.values())
-
-        logger.info(
-            f"🔎 Hybrid Search: {len(vector_results)} (Vector) + {len(bm25_results)} (BM25) -> {len(final_results)} Unique")
-
-        return final_results
+        return list(combined_docs.values())

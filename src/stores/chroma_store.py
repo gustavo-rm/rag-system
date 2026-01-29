@@ -87,6 +87,18 @@ class ChromaStore(VectorStore):
             include=["documents", "metadatas", "distances"]
         )
 
+        return self._format_search_results(results)
+
+    def _format_search_results(self, results: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Parses and formats raw ChromaDB query results into a standard list of dictionaries.
+
+        Args:
+            results (Dict[str, Any]): Raw results from ChromaDB query.
+
+        Returns:
+            List[Dict[str, Any]]: Formatted list of document dictionaries.
+        """
         formatted_results = []
         if results and results['ids']:
             # Chroma returns lists of lists (batch query). We take index [0].
@@ -96,7 +108,6 @@ class ChromaStore(VectorStore):
             metadatas_list = results['metadatas'][0]
 
             for i in range(len(ids_list)):
-
                 # Prepare metadata
                 meta = metadatas_list[i] if metadatas_list[i] else {}
 

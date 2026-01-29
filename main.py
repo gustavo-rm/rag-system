@@ -97,15 +97,12 @@ from src.pipeline import RAGSystem
 from src.chat.chatbot import Chatbot
 
 
-def main():
+def build_rag_system():
     """
-    Main orchestration function for the RAG system.
+    Initializes and assembles all components of the RAG system.
 
-    This function initializes all components of the Retrieval-Augmented Generation (RAG) pipeline,
-    including the vector store, retriever, embedder, LLM, reranker, query router, and cache layers.
-    It also handles the ingestion of a default PDF document if it has not been processed yet.
-
-    Finally, it enters an interactive chat loop where the user can ask questions to the system.
+    Returns:
+        tuple: (rag_system, chatbot)
     """
     logger.info("🚀 Initializing RAG system...")
 
@@ -132,12 +129,9 @@ def main():
     chunker = Chunker(chunk_size=512, chunk_overlap=50)
 
     # --- Embedding Model Configuration ---
-
-    # Path where the training script saved the model
     finetuned_model_path = "models/finetuned_v3"
     base_model_name = "paraphrase-multilingual-mpnet-base-v2"
 
-    # Intelligent selection logic
     if os.path.exists(finetuned_model_path):
         logger.info(f"💎 Fine-Tuned model detected! Using: {finetuned_model_path}")
         selected_model = finetuned_model_path
@@ -146,21 +140,19 @@ def main():
             f"⚠️ Fine-Tuned model not found in '{finetuned_model_path}'. Using base model: {base_model_name}")
         selected_model = base_model_name
 
-    # LLM: Configured with Context Window control and No-Grad
-    # If using OpenAI, remember to configure the key in .env
+    # LLM
     llm = LLM(
         method='local',
         model_name='unsloth/llama-3-8b-Instruct-bnb-4bit'
     )
 
-    # Instantiate the Embedder with the chosen model
+    # Embedder
     embedder = Embedder(
         method='sbert',
         model_name=selected_model
-        # batch_size will be auto-configured (32 for GPU)
     )
 
-    # ReRanker: Updated to BAAI model (Better Multi-lingual/PT-BR support)
+    # ReRanker
     reranker = ReRanker(model_name='BAAI/bge-reranker-base', device='cpu')
 
     # ==========================================
@@ -168,22 +160,17 @@ def main():
     # ==========================================
     logger.info("Configuring Query Routing strategies...")
 
-    # Instantiate strategies injecting the LLM where necessary
     transformers_map = {
         "noop": NoOpTransformer(),
         "hyde": HyDETransformer(llm),
         "multi_query": MultiQueryTransformer(llm, num_queries=3)
     }
 
-    # The Router receives the map and will decide which one to use at runtime
     query_router = QueryRouter(llm, strategies=transformers_map)
 
     # ==========================================
     # 3. CACHE AND PREPROCESSING
     # ==========================================
-
-    # Get dimension dynamically from the loaded model (e.g., 768 for mpnet)
-    # Access the internal attribute of SentenceTransformer if the method is sbert
     embedding_dim = 768  # Safe default value for mpnet-base
     if hasattr(embedder, 'model') and hasattr(embedder.model, 'get_sentence_embedding_dimension'):
         embedding_dim = embedder.model.get_sentence_embedding_dimension()
@@ -193,9 +180,8 @@ def main():
     query_corrector = QueryCorrector(language='pt', enable_grammar=True)
 
     # ==========================================
-    # 4. SYSTEM ASSEMBLY (RAG + CHATBOT)
+    # 4. SYSTEM ASSEMBLY
     # ==========================================
-
     logger.info("Assembling RAG Pipeline...")
 
     rag_system = RAGSystem(
@@ -215,23 +201,22 @@ def main():
         query_corrector=query_corrector
     )
 
-    # ==========================================
-    # 5. DATA INGESTION (Single Execution)
-    # ==========================================
+    return rag_system, chatbot
 
+
+def run_ingestion(rag_system):
+    """
+    Handles the data ingestion process.
+    """
     pdf_path = "data/pdfs/relevo-brasileiro.pdf"
 
-    # Checks if the file exists
     if os.path.exists(pdf_path):
-        # Simple logic to avoid re-ingestion on every boot
-        # In production, check if the file is already in the database by hash or name
         ingestion_done_marker = f"{pdf_path}.done"
 
         if not os.path.exists(ingestion_done_marker):
             logger.info(f"Starting ingestion of document: {pdf_path}")
             try:
                 rag_system.setup_pipeline(pdf_path)
-                # Create an empty file to mark as done
                 with open(ingestion_done_marker, 'w') as f:
                     f.write('done')
                 logger.info("Ingestion completed and marked.")
@@ -242,10 +227,11 @@ def main():
     else:
         logger.warning(f"PDF not found at '{pdf_path}'. The system will work only with prior knowledge.")
 
-    # ==========================================
-    # 6. INTERACTION LOOP (CHAT)
-    # ==========================================
 
+def run_chat_loop(chatbot):
+    """
+    Starts the interactive chat loop with the user.
+    """
     print("\n" + "=" * 50)
     print("🤖 RAG Assistant v3.0 Ready!")
     print("Commands: 'exit' to quit.")
@@ -263,7 +249,6 @@ def main():
                 print("Assistant: See you later! 👋")
                 break
 
-            # The Chatbot manages the entire flow (correction -> cache -> RAG -> Response)
             response = chatbot.chat(user_question)
 
             print(f"Assistant: {response}\n")
@@ -277,6 +262,20 @@ def main():
         except Exception as e:
             logger.critical(f"Unhandled error: {e}")
             print("Assistant: An internal error occurred.")
+
+
+def main():
+    """
+    Main entry point for the application.
+    """
+    # 1. Initialize System
+    rag_system, chatbot = build_rag_system()
+
+    # 2. Run Data Ingestion (if needed)
+    run_ingestion(rag_system)
+
+    # 3. Start Chat Loop
+    run_chat_loop(chatbot)
 
 
 if __name__ == "__main__":
