@@ -71,35 +71,51 @@ class SyntheticTripletGenerator(TripletGenerator):
 
         while len(examples) < self.num_examples and attempts < max_attempts:
             attempts += 1
+            example = self._generate_single_triplet(chunks)
 
-            # Chunk sampling
-            positive_chunk, negative_chunk = random.sample(chunks, 2)
-
-            # Generate the question (Anchor)
-            try:
-                prompt = self.prompt_template.format(chunk=positive_chunk)
-                anchor_question = self.llm.generate_response(
-                    prompt=prompt,
-                    system_prompt=self.system_prompt,
-                    max_new_tokens=60,  # Questions tend to be short
-                    temperature=0.5,  # Medium creativity to vary phrasing
-                    use_cache=False
-                )
-
-                # Simple validation of generation quality
-                if len(anchor_question) < 10 or "?" not in anchor_question:
-                    continue  # Skip bad generations
-
-                examples.append(InputExample(texts=[anchor_question, positive_chunk, negative_chunk]))
+            if example:
+                examples.append(example)
                 pbar.update(1)
 
-            except LLMGenerationError as e:
-                logger.warning(f"LLM Generation failure: {e}. Retrying...")
-                continue
-            except Exception as e:
-                logger.error(f"Unexpected error in generation loop: {e}")
-                break
-
         pbar.close()
+        logger.info(f"✅ Generation completed. Total valid triplets: {len(examples)}")
+        return examples
+
+    def _generate_single_triplet(self, chunks: List[str]) -> InputExample:
+        """
+        Attempts to generate a single valid triplet (Anchor, Positive, Negative).
+
+        Args:
+            chunks (List[str]): Available text chunks.
+
+        Returns:
+            InputExample: A valid training example or None if generation failed.
+        """
+        # Chunk sampling
+        positive_chunk, negative_chunk = random.sample(chunks, 2)
+
+        # Generate the question (Anchor)
+        try:
+            prompt = self.prompt_template.format(chunk=positive_chunk)
+            anchor_question = self.llm.generate_response(
+                prompt=prompt,
+                system_prompt=self.system_prompt,
+                max_new_tokens=60,  # Questions tend to be short
+                temperature=0.5,  # Medium creativity to vary phrasing
+                use_cache=False
+            )
+
+            # Simple validation of generation quality
+            if len(anchor_question) < 10 or "?" not in anchor_question:
+                return None # Skip bad generations
+
+            return InputExample(texts=[anchor_question, positive_chunk, negative_chunk])
+
+        except LLMGenerationError as e:
+            logger.warning(f"LLM Generation failure: {e}. Retrying...")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error in generation: {e}")
+            return None
         logger.info(f"✅ Generation completed. Total valid triplets: {len(examples)}")
         return examples

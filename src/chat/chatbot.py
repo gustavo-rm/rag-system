@@ -48,9 +48,15 @@ class Chatbot:
 
         # --- CONTEXTUALIZATION PROMPT CONFIGURATION (SHIELDED) ---
         self.context_system_prompt = "You are an expert assistant in rewriting questions for search systems."
+        self.context_prompt_template = self._get_context_prompt_template()
 
-        # This prompt contains "Guardrails" to avoid context hallucination
-        self.context_prompt_template = """
+    @staticmethod
+    def _get_context_prompt_template() -> str:
+        """
+        Returns the prompt template for question contextualization.
+        This prompt contains "Guardrails" to avoid context hallucination.
+        """
+        return """
         Conversation History:
         {chat_history}
 
