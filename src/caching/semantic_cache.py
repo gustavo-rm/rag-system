@@ -14,7 +14,7 @@ class SemanticCache:
     close (above a threshold), it returns the old response, saving LLM calls.
     """
 
-    def __init__(self, dimension: int, similarity_threshold: float = 0.92):
+    def __init__(self, dimension: int, similarity_threshold: float = 0.92, capacity: int = 5000):
         """
         Initializes the vector index.
 
@@ -22,9 +22,11 @@ class SemanticCache:
             dimension (int): Dimension of embeddings (e.g., 768 for MPNet, 1536 for OpenAI).
             similarity_threshold (float): Cutoff score (0.0 to 1.0) to consider similarity.
                                           Recommended 0.90+ to avoid incorrect answers.
+            capacity (int): Maximum number of items to store before reset. Prevents unbounded memory growth.
         """
         self.dimension = dimension
         self.threshold = similarity_threshold
+        self.capacity = capacity
 
         # IndexFlatIP = Inner Product.
         # With normalized vectors, this is equivalent to Cosine Similarity.
@@ -33,7 +35,7 @@ class SemanticCache:
         # Stores textual responses aligned with FAISS indices
         self.responses: List[str] = []
 
-        logger.info(f"🧠 Semantic Cache (Layer 2) initialized. Dim: {dimension}, Threshold: {similarity_threshold}")
+        logger.info(f"🧠 Semantic Cache (Layer 2) initialized. Dim: {dimension}, Threshold: {similarity_threshold}, Cap: {capacity}")
 
     def _prepare_vector(self, vector: np.ndarray) -> np.ndarray:
         """
@@ -66,6 +68,12 @@ class SemanticCache:
             question_embedding (np.ndarray): The embedding of the question.
             answer (str): The answer to cache.
         """
+        # Memory Protection: Reset if capacity reached
+        if self.index.ntotal >= self.capacity:
+            logger.warning(f"Semantic Cache reached capacity ({self.capacity}). Resetting index.")
+            self.index.reset()
+            self.responses = []
+
         # Copies and prepares the vector
         normalized_embedding = self._prepare_vector(question_embedding)
 

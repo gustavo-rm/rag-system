@@ -100,7 +100,13 @@ class PDFProcessor:
                         xref = img[0]
                         base_image = doc.extract_image(xref)
                         image_bytes = base_image["image"]
-                        image_ext = base_image["ext"]
+
+                        # Security: Sanitize extension to prevent path traversal or weird file types
+                        raw_ext = base_image["ext"]
+                        image_ext = re.sub(r'[^a-zA-Z0-9]', '', raw_ext)
+                        if not image_ext:
+                            image_ext = "bin" # Fallback
+
                         image_filename = os.path.join(output_folder, f"image_{page_num + 1}_{img_index + 1}.{image_ext}")
 
                         with open(image_filename, "wb") as image_file:
