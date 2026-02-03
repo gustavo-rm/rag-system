@@ -65,3 +65,6 @@ class Config:
 
     # Logging
     LOG_FILENAME = "app_rag.log"
+
+    # --- Internationalization ---
+    LANGUAGE = "en-US" # Default language ("en-US" or "pt-BR")

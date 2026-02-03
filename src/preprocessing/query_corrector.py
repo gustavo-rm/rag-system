@@ -2,6 +2,7 @@ import re
 import logging
 import unicodedata
 from typing import Optional
+from src.config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -21,14 +22,14 @@ class QueryCorrector:
 
     def __init__(
         self,
-        language: str = "pt-BR",
+        language: str = Config.LANGUAGE,
         enable_grammar: bool = False
     ):
         """
         Initializes the QueryCorrector.
 
         Args:
-            language (str): Language code (e.g., 'pt-BR').
+            language (str): Language code (e.g., 'pt-BR' or 'en-US').
             enable_grammar (bool): Activates grammar correction (high cost).
         """
         self.language = language
