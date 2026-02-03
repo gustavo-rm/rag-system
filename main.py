@@ -182,7 +182,7 @@ def build_rag_system():
         similarity_threshold=Config.SEMANTIC_CACHE_THRESHOLD,
         capacity=Config.SEMANTIC_CACHE_CAPACITY
     )
-    query_corrector = QueryCorrector(language='pt', enable_grammar=True)
+    query_corrector = QueryCorrector(language=Config.LANGUAGE, enable_grammar=True)
 
     # ==========================================
     # 4. SYSTEM ASSEMBLY
