@@ -2,6 +2,8 @@ import fitz  # PyMuPDF
 import os
 import re
 import logging
+from src.utils.exceptions import IngestionError
+
 # Logger Configuration
 logger = logging.getLogger(__name__)
 
@@ -56,6 +58,9 @@ class PDFProcessor:
 
         Returns:
             str: A string containing all text extracted from the PDF.
+
+        Raises:
+            IngestionError: If PDF processing fails.
         """
         full_text = ""
         try:
@@ -64,7 +69,7 @@ class PDFProcessor:
                     full_text += page.get_text() + " "
         except Exception as e:
             logger.error(f"Error processing PDF {self.pdf_path}: {e}")
-            return ""
+            raise IngestionError(f"Failed to extract text from {self.pdf_path}: {e}", e)
 
         if clean:
             return self._clean_text(full_text)
@@ -80,26 +85,39 @@ class PDFProcessor:
 
         Returns:
             int: The number of images extracted.
+
+        Raises:
+            IngestionError: If image extraction or saving fails.
         """
-        if not os.path.exists(output_folder):
-            os.makedirs(output_folder)
+        try:
+            if not os.path.exists(output_folder):
+                os.makedirs(output_folder)
 
-        image_count = 0
-        with fitz.open(self.pdf_path) as doc:
-            for page_num in range(len(doc)):
-                for img_index, img in enumerate(doc.get_page_images(page_num)):
-                    xref = img[0]
-                    base_image = doc.extract_image(xref)
-                    image_bytes = base_image["image"]
-                    image_ext = base_image["ext"]
-                    image_filename = os.path.join(output_folder, f"image_{page_num + 1}_{img_index + 1}.{image_ext}")
+            image_count = 0
+            with fitz.open(self.pdf_path) as doc:
+                for page_num in range(len(doc)):
+                    for img_index, img in enumerate(doc.get_page_images(page_num)):
+                        xref = img[0]
+                        base_image = doc.extract_image(xref)
+                        image_bytes = base_image["image"]
 
-                    with open(image_filename, "wb") as image_file:
-                        image_file.write(image_bytes)
-                    image_count += 1
+                        # Security: Sanitize extension to prevent path traversal or weird file types
+                        raw_ext = base_image["ext"]
+                        image_ext = re.sub(r'[^a-zA-Z0-9]', '', raw_ext)
+                        if not image_ext:
+                            image_ext = "bin" # Fallback
 
-        logger.info(f"Total of {image_count} images extracted to '{output_folder}'.")
-        return image_count
+                        image_filename = os.path.join(output_folder, f"image_{page_num + 1}_{img_index + 1}.{image_ext}")
+
+                        with open(image_filename, "wb") as image_file:
+                            image_file.write(image_bytes)
+                        image_count += 1
+
+            logger.info(f"Total of {image_count} images extracted to '{output_folder}'.")
+            return image_count
+        except Exception as e:
+            logger.error(f"Error extracting images from PDF {self.pdf_path}: {e}")
+            raise IngestionError(f"Failed to extract images from {self.pdf_path}: {e}", e)
 
 
 # --- Usage Example ---

@@ -75,3 +75,12 @@ class EmbeddingTrainer:
         except Exception as e:
             logger.critical(f"Failure during training: {e}")
             raise e
+        finally:
+            # Explicit cleanup to free VRAM for other components
+            if 'model' in locals():
+                del model
+            if 'train_loss' in locals():
+                del train_loss
+            if self.device == 'cuda':
+                torch.cuda.empty_cache()
+                logger.debug("GPU memory cache cleared after training.")

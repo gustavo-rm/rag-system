@@ -3,6 +3,7 @@ import numpy as np
 from sentence_transformers.cross_encoder import CrossEncoder
 from typing import List
 import logging
+from src.config import Config
 
 # Logger Configuration
 logger = logging.getLogger(__name__)
@@ -16,7 +17,7 @@ class ReRanker:
     the probability of real relevance in relation to the question.
     """
 
-    def __init__(self, model_name: str = 'BAAI/bge-reranker-base', device: str = None):
+    def __init__(self, model_name: str = None, device: str = None):
         """
         Initializes the Re-ranking model.
 
@@ -24,26 +25,28 @@ class ReRanker:
             model_name (str): Name of the Cross-Encoder model.
             device (str): Device to run the model on ('cuda' or 'cpu').
         """
+        self.model_name = model_name or Config.DEFAULT_RERANKER_MODEL
+
         if not device:
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
         else:
             self.device = device
 
-        logger.info(f"🔄 Initializing ReRanker ({model_name}) on: {self.device}...")
+        logger.info(f"🔄 Initializing ReRanker ({self.model_name}) on: {self.device}...")
 
         try:
             if self.device == "cuda":
                 # Optimized loading for GPU (FP16)
-                self.model = CrossEncoder(model_name, device="cpu", automodel_args={"torch_dtype": torch.float16})
+                self.model = CrossEncoder(self.model_name, device="cpu", automodel_args={"torch_dtype": torch.float16})
                 self.model.model.to("cuda")
                 logger.info("🚀 ReRanker loaded on CUDA (FP16).")
             else:
-                self.model = CrossEncoder(model_name, device="cpu")
+                self.model = CrossEncoder(self.model_name, device="cpu")
                 logger.info("✅ ReRanker loaded on CPU.")
 
         except Exception as e:
             logger.warning(f"⚠️ Error loading on GPU ({e}). Using CPU.")
-            self.model = CrossEncoder(model_name, device="cpu")
+            self.model = CrossEncoder(self.model_name, device="cpu")
             self.device = "cpu"
 
     def rerank(self, query: str, documents: List[str], top_n: int = 3, threshold: float = 0.01) -> List[str]:

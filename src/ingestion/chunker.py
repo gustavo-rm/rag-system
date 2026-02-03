@@ -1,5 +1,6 @@
 import re
 from typing import List, Optional
+from src.config import Config
 
 
 class Chunker:
@@ -11,7 +12,7 @@ class Chunker:
     and then regrouped to fill the chunk size, maintaining a context overlap.
     """
 
-    def __init__(self, chunk_size: int = 512, chunk_overlap: int = 50):
+    def __init__(self, chunk_size: int = Config.CHUNK_SIZE, chunk_overlap: int = Config.CHUNK_OVERLAP):
         """
         Initializes the Chunker.
 

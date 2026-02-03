@@ -3,6 +3,7 @@ import logging
 import re
 from .base import QueryTransformer
 from src.components.llm import LLM
+from src.prompts import Prompts
 
 # Logger Configuration
 logger = logging.getLogger(__name__)
@@ -26,18 +27,7 @@ class MultiQueryTransformer(QueryTransformer):
         self.llm = llm
         self.num_queries = num_queries
         # Optimized prompt to instruct the model not to number, but there is a regex in case it does.
-        self.prompt_template = """
-            You are an AI assistant expert in geographical and factual searches in PORTUGUESE.
-            Your task is to generate {num} variations of the user's question to find the answer in technical documents.
-
-            MANDATORY Rules:
-            1. Answer ONLY in BRAZILIAN PORTUGUESE.
-            2. Use technical synonyms. (Ex: "biggest mountain" -> "highest point", "highest peak", "maximum altitude").
-            3. Do NOT answer the question. Just rewrite the variations.
-            4. Do NOT write introductions like "Here are the variations". Return ONLY the questions, one per line.
-
-            Original Question: "{question}"
-            """
+        self.prompt_template = Prompts.MULTI_QUERY_PROMPT_TEMPLATE
 
     def _sanitize_response(self, response_text: str) -> List[str]:
         """
@@ -90,7 +80,7 @@ class MultiQueryTransformer(QueryTransformer):
         try:
             response = self.llm.generate_response(
                 prompt=self.prompt_template.format(num=self.num_queries, question=query),
-                system_prompt="Generator of search variations in Portuguese.",
+                system_prompt=Prompts.MULTI_QUERY_SYSTEM_PROMPT,
                 max_new_tokens=150,
                 temperature=0.5
             )

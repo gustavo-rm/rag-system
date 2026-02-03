@@ -7,12 +7,14 @@ from transformers import (
     BitsAndBytesConfig,
     PreTrainedTokenizer
 )
+from src.utils.exceptions import RAGBaseError
+from src.config import Config
 
 # Logger configuration
 logger = logging.getLogger(__name__)
 
 
-class LLMGenerationError(Exception):
+class LLMGenerationError(RAGBaseError):
     """Custom exception raised when any critical failure occurs in text generation."""
     pass
 
@@ -22,11 +24,6 @@ try:
 except ImportError:
     OpenAI = None
     OpenAIError = Exception
-
-# --- Defaults ---
-DEFAULT_LOCAL_MODEL = "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit"
-DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
-DEFAULT_CONTEXT_WINDOW = 4000
 
 
 class LLM:
@@ -47,7 +44,7 @@ class LLM:
     """
 
     def __init__(self, method: str = 'local', model_name: Optional[str] = None,
-                 api_key: Optional[str] = None, context_window: int = DEFAULT_CONTEXT_WINDOW):
+                 api_key: Optional[str] = None, context_window: int = Config.DEFAULT_CONTEXT_WINDOW):
         """
         Initializes the LLM instance with automatic configuration based on the environment.
 
@@ -92,7 +89,7 @@ class LLM:
             raise ValueError("The 'api_key' parameter is required for the 'openai' method.")
 
         self.client = OpenAI(api_key=api_key)
-        self.model_name = self.model_name or DEFAULT_OPENAI_MODEL
+        self.model_name = self.model_name or Config.DEFAULT_OPENAI_MODEL
         logger.info(f"☁️ OpenAI LLM ready: {self.model_name}")
 
     def _setup_local_model(self) -> None:
@@ -103,7 +100,7 @@ class LLM:
         Raises:
             RuntimeError: If any error occurs during Tokenizer or Model loading (e.g., lack of VRAM, connection).
         """
-        self.model_name = self.model_name or DEFAULT_LOCAL_MODEL
+        self.model_name = self.model_name or Config.DEFAULT_LOCAL_MODEL
         logger.info(f"🖥️ Preparing Local LLM '{self.model_name}' on: {self.device.upper()}")
 
         if self.device == "cpu":
@@ -257,17 +254,24 @@ class LLM:
 
         Returns:
             str: API response content.
+
+        Raises:
+            LLMGenerationError: If OpenAI API call fails.
         """
-        response = self.client.chat.completions.create(
-            model=self.model_name,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=temperature,
-            max_tokens=max_tokens
-        )
-        return response.choices[0].message.content.strip()
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=temperature,
+                max_tokens=max_tokens
+            )
+            return response.choices[0].message.content.strip()
+        except OpenAIError as e:
+            logger.error(f"OpenAI API generation failed: {e}")
+            raise LLMGenerationError(f"OpenAI API failed: {e}", e)
 
     def _generate_local(self, prompt: str, system_prompt: str, max_new_tokens: int, temperature: float,
                         use_cache: bool) -> str:

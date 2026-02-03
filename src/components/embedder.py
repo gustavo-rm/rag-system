@@ -2,18 +2,17 @@ import torch
 import logging
 from typing import List
 from sentence_transformers import SentenceTransformer
+from src.utils.exceptions import EmbeddingError
+from src.config import Config
 
 # Logger Configuration
 logger = logging.getLogger(__name__)
 
 try:
-    from openai import OpenAI
+    from openai import OpenAI, OpenAIError
 except ImportError:
     OpenAI = None
-
-# Default Model Configurations
-DEFAULT_SBERT_MODEL = 'paraphrase-multilingual-mpnet-base-v2'
-DEFAULT_OPENAI_MODEL = "text-embedding-3-small"
+    OpenAIError = Exception
 
 
 class Embedder:
@@ -67,8 +66,8 @@ class Embedder:
 
         # Model Initialization
         if self.method == 'sbert':
-            logger.info(f"🖥️ Initializing SBERT ({model_name or DEFAULT_SBERT_MODEL})...")
-            sbert_model = model_name or DEFAULT_SBERT_MODEL
+            sbert_model = model_name or Config.DEFAULT_SBERT_MODEL
+            logger.info(f"🖥️ Initializing SBERT ({sbert_model})...")
             self.model = SentenceTransformer(
                 sbert_model,
                 device=self.device,
@@ -82,7 +81,7 @@ class Embedder:
                 raise ValueError("API Key is required for OpenAI method.")
 
             self.client = OpenAI(api_key=openai_api_key)
-            self.openai_model = model_name or DEFAULT_OPENAI_MODEL
+            self.openai_model = model_name or Config.DEFAULT_OPENAI_EMBEDDING_MODEL
             logger.info(f"☁️ OpenAI Embedder ready: {self.openai_model}")
 
         else:
@@ -113,6 +112,9 @@ class Embedder:
 
         Returns:
             List[List[float]]: List of embeddings.
+
+        Raises:
+            EmbeddingError: If generation fails.
         """
         if not chunks:
             return []
@@ -132,15 +134,22 @@ class Embedder:
 
         Returns:
             List[List[float]]: List of embeddings.
+
+        Raises:
+            EmbeddingError: If SBERT fails.
         """
-        embeddings = self.model.encode(
-            chunks,
-            batch_size=self.batch_size,
-            show_progress_bar=True,
-            normalize_embeddings=True,
-            convert_to_numpy=True
-        )
-        return embeddings.tolist()
+        try:
+            embeddings = self.model.encode(
+                chunks,
+                batch_size=self.batch_size,
+                show_progress_bar=True,
+                normalize_embeddings=True,
+                convert_to_numpy=True
+            )
+            return embeddings.tolist()
+        except Exception as e:
+            logger.error(f"SBERT embedding generation failed: {e}")
+            raise EmbeddingError(f"SBERT generation failed: {e}", e)
 
     def _generate_openai_embeddings(self, chunks: List[str]) -> List[List[float]]:
         """
@@ -152,6 +161,9 @@ class Embedder:
 
         Returns:
             List[List[float]]: List of embeddings.
+
+        Raises:
+            EmbeddingError: If OpenAI API call fails.
         """
         all_embeddings = []
 
@@ -163,8 +175,11 @@ class Embedder:
                 response = self.client.embeddings.create(input=batch, model=self.openai_model)
                 batch_embeddings = [item.embedding for item in response.data]
                 all_embeddings.extend(batch_embeddings)
+            except OpenAIError as e:
+                logger.error(f"OpenAI API Error in batch {i}: {e}")
+                raise EmbeddingError(f"OpenAI API Error: {e}", e)
             except Exception as e:
-                logger.info(f"⚠️ Error generating OpenAI embeddings in batch {i}: {e}")
-                raise e
+                logger.error(f"Unexpected error generating OpenAI embeddings in batch {i}: {e}")
+                raise EmbeddingError(f"Unexpected embedding error: {e}", e)
 
         return all_embeddings
