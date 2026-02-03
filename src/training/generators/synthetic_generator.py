@@ -7,6 +7,7 @@ from sentence_transformers.readers import InputExample
 # v3 System Imports
 from src.components.llm import LLM, LLMGenerationError
 from src.training.generators import TripletGenerator
+from src.prompts import Prompts
 
 # Logger Configuration
 logger = logging.getLogger(__name__)
@@ -33,18 +34,8 @@ class SyntheticTripletGenerator(TripletGenerator):
         self.llm = llm
         self.num_examples = num_examples
 
-        self.system_prompt = "You are an expert in creating AI training datasets."
-        self.prompt_template = """
-        Below is an excerpt from a technical document.
-        Your task: Write a SHORT and OBJECTIVE question that can be answered EXCLUSIVELY with the information in this excerpt.
-
-        [EXCERPT]
-        {chunk}
-        [/EXCERPT]
-
-        Answer ONLY the question. Do not add "Here is the question" or quotes.
-        Question:
-        """
+        self.system_prompt = Prompts.SYNTHETIC_GEN_SYSTEM_PROMPT
+        self.prompt_template = Prompts.SYNTHETIC_GEN_PROMPT_TEMPLATE
 
     def generate(self, chunks: List[str], **kwargs) -> List[InputExample]:
         """

@@ -1,7 +1,9 @@
 from typing import List
 from .base import QueryTransformer
 from src.components.llm import LLM
+from src.prompts import Prompts
 import logging
+
 # Logger Configuration
 logger = logging.getLogger(__name__)
 
@@ -23,12 +25,7 @@ class HyDETransformer(QueryTransformer):
             llm (LLM): The Language Model used to generate the hypothetical document.
         """
         self.llm = llm
-        self.prompt_template = """
-        Write a brief technical excerpt that answers the question below.
-        Do not answer the question directly, but simulate what the text in a technical manual containing the answer would look like.
-        Question: {question}
-        Manual passage:
-        """
+        self.prompt_template = Prompts.HYDE_PROMPT_TEMPLATE
 
     def transform(self, query: str) -> List[str]:
         """
@@ -44,7 +41,7 @@ class HyDETransformer(QueryTransformer):
 
         hypothetical_doc = self.llm.generate_response(
             prompt=self.prompt_template.format(question=query),
-            system_prompt="You are a synthetic data generator for RAG.",
+            system_prompt=Prompts.HYDE_SYSTEM_PROMPT,
             temperature=0.4,
             max_new_tokens=120
         )

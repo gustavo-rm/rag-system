@@ -3,9 +3,10 @@ from pathlib import Path
 import logging
 from dotenv import load_dotenv
 from src.utils.logger import setup_logging
+from src.config import Config
 
 # --- Logging Configuration ---
-setup_logging()
+setup_logging(log_dir=str(Config.LOGS_DIR), log_filename=Config.LOG_FILENAME)
 logger = logging.getLogger(__name__)
 
 # --- Load Variables ---
@@ -32,9 +33,9 @@ def auto_configure_huggingface():
     """
     # 1. Definition of models used in the project
     required_models = [
-        "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit",  # Current LLM
-        "BAAI/bge-reranker-base",  # Reranker
-        "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"  # Base Embedder
+        Config.DEFAULT_LOCAL_MODEL,  # Current LLM
+        Config.DEFAULT_RERANKER_MODEL,  # Reranker
+        Config.DEFAULT_SBERT_MODEL  # Base Embedder
     ]
 
     # Default cache path on Linux
@@ -114,8 +115,8 @@ def build_rag_system():
     logger.info("Configuring Vector Store...")
     config_store = {
         'type': 'chroma',
-        'path': 'data/chromaDB/',
-        'collection_name': 'rag_project_v3'
+        'path': str(Config.CHROMA_DB_PATH),
+        'collection_name': Config.CHROMA_COLLECTION_NAME
     }
     base_vector_store = get_vector_store(config_store)
 
@@ -126,15 +127,15 @@ def build_rag_system():
     # --- C. AI Components (Embedder, LLM, ReRanker) ---
 
     # Chunker
-    chunker = Chunker(chunk_size=512, chunk_overlap=50)
+    chunker = Chunker(chunk_size=Config.CHUNK_SIZE, chunk_overlap=Config.CHUNK_OVERLAP)
 
     # --- Embedding Model Configuration ---
-    finetuned_model_path = "models/finetuned_v3"
-    base_model_name = "paraphrase-multilingual-mpnet-base-v2"
+    finetuned_model_path = Config.FINETUNED_MODEL_PATH
+    base_model_name = Config.DEFAULT_SBERT_MODEL
 
     if os.path.exists(finetuned_model_path):
         logger.info(f"💎 Fine-Tuned model detected! Using: {finetuned_model_path}")
-        selected_model = finetuned_model_path
+        selected_model = str(finetuned_model_path)
     else:
         logger.warning(
             f"⚠️ Fine-Tuned model not found in '{finetuned_model_path}'. Using base model: {base_model_name}")
@@ -143,7 +144,7 @@ def build_rag_system():
     # LLM
     llm = LLM(
         method='local',
-        model_name='unsloth/llama-3-8b-Instruct-bnb-4bit'
+        model_name=Config.DEFAULT_LOCAL_MODEL
     )
 
     # Embedder
@@ -153,7 +154,7 @@ def build_rag_system():
     )
 
     # ReRanker
-    reranker = ReRanker(model_name='BAAI/bge-reranker-base', device='cpu')
+    reranker = ReRanker(model_name=Config.DEFAULT_RERANKER_MODEL, device='cpu')
 
     # ==========================================
     # 2. ROUTING STRATEGIES (ROUTER)
@@ -171,12 +172,16 @@ def build_rag_system():
     # ==========================================
     # 3. CACHE AND PREPROCESSING
     # ==========================================
-    embedding_dim = 768  # Safe default value for mpnet-base
+    embedding_dim = Config.DEFAULT_EMBEDDING_DIM  # Safe default value for mpnet-base
     if hasattr(embedder, 'model') and hasattr(embedder.model, 'get_sentence_embedding_dimension'):
         embedding_dim = embedder.model.get_sentence_embedding_dimension()
 
-    exact_cache = CacheManager()
-    semantic_cache = SemanticCache(dimension=embedding_dim, similarity_threshold=0.92)
+    exact_cache = CacheManager(capacity=Config.EXACT_CACHE_CAPACITY)
+    semantic_cache = SemanticCache(
+        dimension=embedding_dim,
+        similarity_threshold=Config.SEMANTIC_CACHE_THRESHOLD,
+        capacity=Config.SEMANTIC_CACHE_CAPACITY
+    )
     query_corrector = QueryCorrector(language='pt', enable_grammar=True)
 
     # ==========================================
@@ -208,7 +213,7 @@ def run_ingestion(rag_system):
     """
     Handles the data ingestion process.
     """
-    pdf_path = "data/pdfs/relevo-brasileiro.pdf"
+    pdf_path = Config.DEFAULT_PDF_PATH
 
     if os.path.exists(pdf_path):
         ingestion_done_marker = f"{pdf_path}.done"
@@ -216,7 +221,7 @@ def run_ingestion(rag_system):
         if not os.path.exists(ingestion_done_marker):
             logger.info(f"Starting ingestion of document: {pdf_path}")
             try:
-                rag_system.setup_pipeline(pdf_path)
+                rag_system.setup_pipeline(str(pdf_path))
                 with open(ingestion_done_marker, 'w') as f:
                     f.write('done')
                 logger.info("Ingestion completed and marked.")

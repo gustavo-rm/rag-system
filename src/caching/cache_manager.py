@@ -1,5 +1,6 @@
 import logging
 from typing import Optional, Dict
+from src.config import Config
 
 # Logger Configuration
 logger = logging.getLogger(__name__)
@@ -13,7 +14,7 @@ class CacheManager:
     vector calculations. Implements a simple capacity policy to avoid memory leaks.
     """
 
-    def __init__(self, capacity: int = 10000):
+    def __init__(self, capacity: int = Config.EXACT_CACHE_CAPACITY):
         """
         Initializes the cache manager.
 

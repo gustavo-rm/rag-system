@@ -9,6 +9,8 @@ from src.components.reranker import ReRanker
 from src.components.hybrid_retriever import HybridRetriever
 from src.routing.query_router import QueryRouter
 from src.utils.exceptions import IngestionError, EmbeddingError, VectorStoreError
+from src.config import Config
+from src.prompts import Prompts
 
 # Logger Configuration for the module
 logger = logging.getLogger(__name__)
@@ -56,17 +58,7 @@ class RAGSystem:
         self.llm = llm
         self.router = router
 
-        self.system_prompt = """
-        You are a precise geographical and technical assistant.
-        Your only source of truth are the [CONTEXTS] provided below.
-
-        Guidelines:
-        1. Answer the user's question using ONLY the information from the context.
-        2. Answer in Brazilian Portuguese in a fluid and direct manner.
-        3. If the context contains the answer, explain it in detail.
-        4. If the context mentions the subject but doesn't have the exact answer, say what you found about the topic.
-        5. ONLY if the context is totally irrelevant, say: "The information was not found in the provided documents."
-        """
+        self.system_prompt = Prompts.RAG_SYSTEM_PROMPT
 
     def setup_pipeline(self, pdf_path: str):
         """
@@ -106,7 +98,7 @@ class RAGSystem:
             logger.error(f"❌ Critical unhandled ingestion failure: {e}")
             raise e
 
-    def ask(self, question: str, retrieval_top_k: int = 20, rerank_top_n: int = 5) -> Dict[str, Any]:
+    def ask(self, question: str, retrieval_top_k: int = Config.RETRIEVAL_TOP_K, rerank_top_n: int = Config.RERANK_TOP_N) -> Dict[str, Any]:
         """
         Orchestrates the response flow for a user question.
 
@@ -243,21 +235,16 @@ class RAGSystem:
         """
         context_block = "\n\n---\n\n".join(contexts)
 
-        user_prompt = f"""
-        [RETRIEVED CONTEXTS]
-        {context_block}
-
-        [USER QUESTION]
-        {question}
-
-        Based strictly on the contexts above, what is the answer?
-        """
+        user_prompt = Prompts.RAG_USER_PROMPT_TEMPLATE.format(
+            context_block=context_block,
+            question=question
+        )
 
         try:
             return self.llm.generate_response(
                 prompt=user_prompt,
                 system_prompt=self.system_prompt,
-                temperature=0.1
+                temperature=Config.DEFAULT_TEMPERATURE
             )
         except Exception as e:
             logger.error(f"Error in LLM generation: {e}")

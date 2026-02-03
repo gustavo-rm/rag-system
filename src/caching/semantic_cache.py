@@ -2,6 +2,7 @@ import faiss
 import logging
 import numpy as np
 from typing import Optional, List
+from src.config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +15,9 @@ class SemanticCache:
     close (above a threshold), it returns the old response, saving LLM calls.
     """
 
-    def __init__(self, dimension: int, similarity_threshold: float = 0.92, capacity: int = 5000):
+    def __init__(self, dimension: int,
+                 similarity_threshold: float = Config.SEMANTIC_CACHE_THRESHOLD,
+                 capacity: int = Config.SEMANTIC_CACHE_CAPACITY):
         """
         Initializes the vector index.
 

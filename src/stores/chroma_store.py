@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class ChromaStore(VectorStore):
     """VectorStore implementation for the local database ChromaDB."""
 
-    def __init__(self, path: str = "./chroma_db", collection_name: str = "rag_collection"):
+    def __init__(self, path: str = None, collection_name: str = None):
         """
         Initializes the ChromaDB store.
 
@@ -23,6 +23,8 @@ class ChromaStore(VectorStore):
         Raises:
             VectorStoreError: If initialization fails.
         """
+        path = path or str(Config.CHROMA_DB_PATH)
+        collection_name = collection_name or Config.DEFAULT_COLLECTION_NAME
         try:
             # Ensures the persistence directory exists
             if not os.path.exists(path):

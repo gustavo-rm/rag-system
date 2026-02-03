@@ -3,6 +3,7 @@ import logging
 from typing import List
 from sentence_transformers import SentenceTransformer
 from src.utils.exceptions import EmbeddingError
+from src.config import Config
 
 # Logger Configuration
 logger = logging.getLogger(__name__)
@@ -12,10 +13,6 @@ try:
 except ImportError:
     OpenAI = None
     OpenAIError = Exception
-
-# Default Model Configurations
-DEFAULT_SBERT_MODEL = 'paraphrase-multilingual-mpnet-base-v2'
-DEFAULT_OPENAI_MODEL = "text-embedding-3-small"
 
 
 class Embedder:
@@ -69,8 +66,8 @@ class Embedder:
 
         # Model Initialization
         if self.method == 'sbert':
-            logger.info(f"🖥️ Initializing SBERT ({model_name or DEFAULT_SBERT_MODEL})...")
-            sbert_model = model_name or DEFAULT_SBERT_MODEL
+            sbert_model = model_name or Config.DEFAULT_SBERT_MODEL
+            logger.info(f"🖥️ Initializing SBERT ({sbert_model})...")
             self.model = SentenceTransformer(
                 sbert_model,
                 device=self.device,
@@ -84,7 +81,7 @@ class Embedder:
                 raise ValueError("API Key is required for OpenAI method.")
 
             self.client = OpenAI(api_key=openai_api_key)
-            self.openai_model = model_name or DEFAULT_OPENAI_MODEL
+            self.openai_model = model_name or Config.DEFAULT_OPENAI_EMBEDDING_MODEL
             logger.info(f"☁️ OpenAI Embedder ready: {self.openai_model}")
 
         else:

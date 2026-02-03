@@ -8,6 +8,7 @@ from src.caching.cache_manager import CacheManager
 from src.caching.semantic_cache import SemanticCache
 from src.pipeline import RAGSystem
 from src.preprocessing.query_corrector import QueryCorrector
+from src.prompts import Prompts
 
 # Logger Configuration
 logger = logging.getLogger(__name__)
@@ -47,104 +48,8 @@ class Chatbot:
         self.history = ChatHistory(max_history_len=6)
 
         # --- CONTEXTUALIZATION PROMPT CONFIGURATION (SHIELDED) ---
-        self.context_system_prompt = "You are an expert assistant in rewriting questions for search systems."
-        self.context_prompt_template = self._get_context_prompt_template()
-
-    @staticmethod
-    def _get_context_prompt_template() -> str:
-        """
-        Returns the prompt template for question contextualization.
-        This prompt contains "Guardrails" to avoid context hallucination.
-        """
-        return """
-        Conversation History:
-        {chat_history}
-
-        Last User Question: "{question}"
-
-        You are a QUESTION REWRITING module.
-        You do NOT answer questions.
-        You ONLY rewrite the 'Last Question', strictly following the rules below.
-        
-        ==============================
-        PRIORITY ORDER (FOLLOW STRICTLY)
-        ==============================
-        1. NEVER answer the question.
-        2. If the question is clear and independent of the history, REPEAT IT EXACTLY as is.
-        3. Use the history ONLY to replace ambiguous pronouns.
-        4. If there is a topic change, IGNORE the history completely.
-        
-        ==============================
-        NEW TOPIC DEFINITION
-        ==============================
-        Consider a NEW TOPIC when the main noun of the question changes
-        relative to the previous history.
-        
-        Example:
-        History: "What is the capital of Brazil?"
-        Last Question: "And the relief?"
-        → New topic → ignore history.
-        
-        ==============================
-        MANDATORY RULES
-        ==============================
-        - Do NOT add information.
-        - Do NOT rephrase style, tone, or vocabulary.
-        - Do NOT make the question more specific.
-        - Do NOT infer hidden intentions.
-        - Do NOT connect ideas that are not explicitly in the question.
-        
-        ==============================
-        REWRITING RULES
-        ==============================
-        - If the question uses pronouns ("he", "she", "it", "that") referring to the history,
-        replace ONLY with the correct term already present in the history.
-        - If there are NO ambiguous pronouns, REPEAT the question exactly,
-        keeping all words, punctuation, and order.
-        
-        ==============================
-        EXAMPLES
-        ==============================
-        
-        Example 1 — Clear question (independent of history)
-        Last Question:
-        "What is the highest peak in Brazil?"
-        
-        Output:
-        "What is the highest peak in Brazil?"
-        
-        ------------------------------
-        
-        Example 2 — Use of history-dependent pronoun
-        History:
-        "What is the capital of Brazil?"
-        
-        Last Question:
-        "And what is its population?"
-        
-        Output:
-        "What is the population of the capital of Brazil?"
-        
-        ------------------------------
-        
-        Example 3 — New topic (history ignored)
-        History:
-        "What is the capital of Brazil?"
-        
-        Last Question:
-        "How is the relief?"
-        
-        Output:
-        "How is the relief?"
-        
-        ==============================
-        OUTPUT FORMAT
-        ==============================
-        - Return ONLY the final question.
-        - Do NOT include explanations, comments, or any other text.
-        
-        Reformulated Question (text only):
-        """
+        self.context_system_prompt = Prompts.CHATBOT_SYSTEM_PROMPT
+        self.context_prompt_template = Prompts.CHATBOT_CONTEXT_TEMPLATE
 
     def _contextualize_question(self, question: str) -> str:
         """

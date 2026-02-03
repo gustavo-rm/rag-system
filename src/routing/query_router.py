@@ -3,6 +3,7 @@ import json
 from typing import Dict, Optional
 from src.components.llm import LLM
 from src.query_transformers import QueryTransformer
+from src.prompts import Prompts
 
 # Logger Configuration for this module
 logger = logging.getLogger(__name__)
@@ -37,9 +38,9 @@ class QueryRouter:
 
         # Detailed criteria to guide the LLM
         self.criteria = {
-            "noop": "Use ONLY for extremely specific questions containing exact identifiers (IDs, Codes, Logs) that do not need expansion.",
-            "hyde": "Use for complex, abstract questions, 'How does it work', 'Why', or theoretical definitions requiring reasoning.",
-            "multi_query": "THE BEST OPTION for short, factual questions ('What is...', 'Who was...'), geographical, or vague queries. Use whenever synonyms are possible."
+            "noop": Prompts.ROUTER_CRITERIA_NOOP,
+            "hyde": Prompts.ROUTER_CRITERIA_HYDE,
+            "multi_query": Prompts.ROUTER_CRITERIA_MULTI_QUERY
         }
 
         logger.info(f"📍 QueryRouter initialized with strategies: {list(self.strategies.keys())}")
@@ -103,7 +104,7 @@ class QueryRouter:
             # Request a short and deterministic response
             response = self.llm.generate_response(
                 prompt=prompt,
-                system_prompt="You are a search intent classifier (RAG Router).",
+                system_prompt=Prompts.ROUTER_SYSTEM_PROMPT,
                 max_new_tokens=10,
                 temperature=0.0
             )
@@ -154,24 +155,9 @@ class QueryRouter:
         Returns:
             str: The formatted prompt.
         """
-        return f"""
-        Analyze the USER QUESTION and classify it into one of the following search strategies:
-
-        1. 'noop': {self.criteria['noop']}
-        2. 'hyde': {self.criteria['hyde']}
-        3. 'multi_query': {self.criteria['multi_query']}
-
-        EXAMPLES TO GUIDE YOUR DECISION:
-        - "Error 500 on endpoint /login" -> noop
-        - "What is the ID of client 9988?" -> noop
-        - "Explain the impact of inflation on interest rates" -> hyde
-        - "How does photosynthesis work?" -> hyde
-        - "Capital of Brazil" -> multi_query
-        - "What is the highest Brazilian peak?" -> multi_query (Geographical fact/Synonyms)
-        - "Best beaches in the northeast" -> multi_query
-
-        USER QUESTION: "{question}"
-
-        Return ONLY the strategy name (noop, hyde or multi_query). Nothing else.
-        Response:
-        """
+        return Prompts.ROUTER_PROMPT_TEMPLATE.format(
+            criteria_noop=self.criteria['noop'],
+            criteria_hyde=self.criteria['hyde'],
+            criteria_multi_query=self.criteria['multi_query'],
+            question=question
+        )

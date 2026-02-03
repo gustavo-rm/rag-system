@@ -5,9 +5,10 @@ import gc
 import torch
 
 from src.utils.logger import setup_logging
+from src.config import Config
 
 # --- Logging Configuration ---
-setup_logging()
+setup_logging(log_dir=str(Config.LOGS_DIR), log_filename=Config.LOG_FILENAME)
 logger = logging.getLogger(__name__)
 
 # Import v3 modules
@@ -38,15 +39,15 @@ def main():
                         help="Path to PDF (synthetic mode) or JSON (file mode).")
 
     # Training Parameters
-    parser.add_argument('--base_model', type=str, default='paraphrase-multilingual-mpnet-base-v2',
+    parser.add_argument('--base_model', type=str, default=Config.DEFAULT_SBERT_MODEL,
                         help="Base model to fine-tune.")
-    parser.add_argument('--output_dir', type=str, default='models/finetuned_v3',
+    parser.add_argument('--output_dir', type=str, default=str(Config.FINETUNED_MODEL_PATH),
                         help="Directory to save the fine-tuned model.")
-    parser.add_argument('--epochs', type=int, default=3,
+    parser.add_argument('--epochs', type=int, default=Config.TRAINING_EPOCHS,
                         help="Number of training epochs.")
-    parser.add_argument('--batch_size', type=int, default=16,
+    parser.add_argument('--batch_size', type=int, default=Config.TRAINING_BATCH_SIZE,
                         help="Batch size for training.")
-    parser.add_argument('--num_gen', type=int, default=50,
+    parser.add_argument('--num_gen', type=int, default=Config.SYNTHETIC_EXAMPLES_COUNT,
                         help="Number of synthetic examples to generate (only for synthetic mode).")
 
     args = parser.parse_args()
@@ -70,13 +71,13 @@ def main():
         text = processor.extract_text()
 
         # Use smaller chunks (384) for training, as MPNet has a limit of 384 tokens
-        chunker = Chunker(chunk_size=384, chunk_overlap=0)
+        chunker = Chunker(chunk_size=Config.TRAINING_CHUNK_SIZE, chunk_overlap=0)
         chunks = chunker.chunk_text(text)
 
         logger.info(f"Text broken into {len(chunks)} chunks.")
 
         # Load Local LLM (Phi-3 is great for generating quick questions)
-        llm = LLM(method='local', model_name='microsoft/Phi-3-mini-4k-instruct')
+        llm = LLM(method='local', model_name=Config.TRAINING_LLM_MODEL)
 
         generator = SyntheticTripletGenerator(llm=llm, num_examples=args.num_gen)
         train_examples = generator.generate(chunks=chunks)
