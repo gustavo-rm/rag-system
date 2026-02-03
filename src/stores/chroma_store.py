@@ -5,6 +5,8 @@ from .base import VectorStore
 from src.utils.exceptions import VectorStoreError
 import logging
 
+from ..config import Config
+
 # Logger Configuration
 logger = logging.getLogger(__name__)
 

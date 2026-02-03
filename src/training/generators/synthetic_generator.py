@@ -1,6 +1,8 @@
 import random
 import logging
 from typing import List
+
+from sentence_transformers import InputExample
 from tqdm import tqdm
 from sentence_transformers.readers import InputExample
 
@@ -72,7 +74,7 @@ class SyntheticTripletGenerator(TripletGenerator):
         logger.info(f"✅ Generation completed. Total valid triplets: {len(examples)}")
         return examples
 
-    def _generate_single_triplet(self, chunks: List[str]) -> InputExample:
+    def _generate_single_triplet(self, chunks: List[str]) -> InputExample | None:
         """
         Attempts to generate a single valid triplet (Anchor, Positive, Negative).
 
